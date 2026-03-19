@@ -1,0 +1,9 @@
+[submodule "Firmware/lib/TFT_eSPI"]
+	path = Firmware/lib/TFT_eSPI
+	url = https://github.com/Bodmer/TFT_eSPI.git
+[submodule "Firmware/components/lvgl"]
+	path = Firmware/components/lvgl
+	url = https://github.com/lvgl/lvgl.git
+[submodule "Firmware/components/esp-idf-ili9340"]
+	path = Firmware/components/esp-idf-ili9340
+	url = https://github.com/nopnop2002/esp-idf-ili9340.git
