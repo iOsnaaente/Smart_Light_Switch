@@ -56,25 +56,26 @@ def convert_image_to_rgb565(input_path, width, height, output_bin, output_h):
     # Generate C header file with image data
     image_name = Path(input_path).stem.upper()
     
-    header_content = f"""// Auto-generated image header
-// Generated from: {Path(input_path).name}
-// Dimensions: {width}x{height}
-// Format: RGB565 (16-bit per pixel)
+    header_content = \
+    f"""// Auto-generated image header
+    // Generated from: {Path(input_path).name}
+    // Dimensions: {width}x{height}
+    // Format: RGB565 (16-bit per pixel)
 
-#ifndef IMAGE_{image_name}_H_
-#define IMAGE_{image_name}_H_
+    #ifndef IMAGE_{image_name}_H_
+    #define IMAGE_{image_name}_H_
 
-#include <stdint.h>
+    #include <stdint.h>
 
-#define IMAGE_{image_name}_WIDTH  {width}
-#define IMAGE_{image_name}_HEIGHT {height}
-#define IMAGE_{image_name}_SIZE   ({width} * {height} * 2)  // bytes
+    #define IMAGE_{image_name}_WIDTH  {width}
+    #define IMAGE_{image_name}_HEIGHT {height}
+    #define IMAGE_{image_name}_SIZE   ({width} * {height} * 2)  // bytes
 
-// Raw RGB565 image data
-extern const uint8_t image_{image_name.lower()}_data[];
+    // Raw RGB565 image data
+    extern const uint8_t image_{image_name.lower()}_data[];
 
-#endif // IMAGE_{image_name}_H_
-"""
+    #endif // IMAGE_{image_name}_H_
+    """
     
     with open(output_h, 'w') as f:
         f.write(header_content)

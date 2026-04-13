@@ -5,6 +5,12 @@ cmake_minimum_required(VERSION 3.16)
 set(COMPONENT_DIRS
 	main
 	components/ili9340
+	components/lvgl
+	controllers
+	sensors/
+	ui/
+	communication/
+	system/
 	$ENV{IDF_PATH}/components
 )
 

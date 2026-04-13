@@ -1,5 +1,11 @@
 {
     "idf.currentSetup": "/home/iosnaaente/esp/v5.5.1/esp-idf",
     "idf.port": "/dev/ttyACM0",
-    "idf.flashType": "UART"
+    "idf.flashType": "UART",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "C_Cpp.default.forcedInclude": [
+        "${workspaceFolder}/build/config/sdkconfig.h"
+    ],
+    "C_Cpp.default.intelliSenseMode": "linux-gcc-x64",
+    "C_Cpp.default.configurationProvider": "espressif.esp-idf-extension"
 }

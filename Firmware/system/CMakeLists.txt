@@ -1,0 +1,9 @@
+idf_component_register(
+    SRCS
+        "system_stub.cpp"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        esp_event
+        freertos
+)

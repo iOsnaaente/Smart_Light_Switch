@@ -1,6 +1,10 @@
 #ifndef MAIN_ILI9340_H_
 #define MAIN_ILI9340_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "driver/spi_master.h"
 #include "fontx.h"
 
@@ -113,5 +117,8 @@ void lcdScroll(TFT_t * dev, uint16_t vsp);
 void lcdDrawFinish(TFT_t *dev);
 int xptGetit(TFT_t * dev, int cmd);
 bool touch_getxy(TFT_t *dev, int *xp, int *yp);
+#ifdef __cplusplus
+}
+#endif
 #endif /* MAIN_ILI9340_H_ */
 
