@@ -4,7 +4,7 @@
  *          periódica em task dedicada e filtro de média móvel 
  *          exponencial (EMA).
  * @author  Bruno Gabriel Flores Sampaio
- * @date    Criado em 13 de Abriel de 2026
+ * @date    Criado em 13 de Abril de 2026
  */
 
 #pragma once
@@ -38,16 +38,6 @@ class LDRSensor {
         static constexpr uint32_t   TASK_PRIORITY   = 8;
 
     private:
-        /**
-         * @brief   Entry point da Task de leitura periodica 
-         * @note    Necessário para não ser Singleton 
-         */
-        static void sampling_task_entry(void *pvarg);
-        /**
-         * @brief   Task de leitura periodica do sensor, que atualiza 
-         *          os valores lidos e salva a média filtrada (filtro EMA).
-         */
-        void sampling_task();
 
         /* Variáveis de controle da task */
         uint32_t        read_period_ms;
@@ -71,9 +61,21 @@ class LDRSensor {
 
         /* Variável de controle do estado da task */
         bool running;
-        
+
+        /**
+         * @brief   Entry point da Task de leitura periodica 
+         * @note    Necessário para não ser Singleton 
+         */
+        static void sampling_task_entry(void *pvarg);
+
+        /**
+         * @brief   Task de leitura periodica do sensor, que atualiza 
+         *          os valores lidos e salva a média filtrada (filtro EMA).
+         */
+        void sampling_task();
 
     public:
+
         /** 
          * @brief   Construtor da classe LDRSensor
          */
@@ -154,21 +156,36 @@ class LDRSensor {
         /**
          * @brief   Realiza uma leitura única do sensor, retornando os valores lidos
          *          e atualizando a média filtrada.
-         * @param   out_raw Ponteiro para armazenar o valor bruto lido do ADC
-         * @param   out_normalized Ponteiro para armazenar o valor 
-         *          normalizado (0.0 a 1.0)
-         * @param   out_voltage Ponteiro para armazenar o valor em volts correspondente 
-         *          à leitura
+         * @param   out_normalized Ponteiro para variável onde será armazenado o valor
+         *          normalizado (entre 0.0 e 1.0)
          * @return  ESP_OK se a leitura foi bem-sucedida
-         * @return  ESP_ERR_INVALID_STATE se o sensor não foi inicializado ou se houve 
-         *          falha ao ler o ADC
-         * @note    Este método é utilizado internamente pela task de leitura periódica, 
-         *          mas também pode ser chamado externamente para obter uma leitura pontual.
+         * @return  ESP_ERR_INVALID_STATE se o sensor não foi inicializado ou se
+         *          houve falha ao ler o ADC.
          */
         esp_err_t read_normalized( float *out_normalized );
+
+        /**
+         * @brief   Realiza uma leitura única do sensor, retornando o valor em volts e
+         *          o valor bruto do ADC.
+         * @param   out_voltage Ponteiro para variável onde será armazenado o valor em
+         *          volts.
+         * @return  ESP_OK se a leitura foi bem-sucedida
+         * @return  ESP_ERR_INVALID_STATE se o sensor não foi inicializado ou se
+         *          houve falha ao ler o ADC.
+         */
         esp_err_t read_voltage( float *out_voltage );
+
+        /**
+         * @brief   Realiza uma leitura única do sensor, retornando o valor bruto do ADC.
+         * @param   out_raw Ponteiro para variável onde será armazenado o valor bruto do 
+         *          ADC.
+         * @return  ESP_OK se a leitura foi bem-sucedida
+         * @return  ESP_ERR_INVALID_STATE se o sensor não foi inicializado ou se houve 
+         *          falha ao ler o ADC.
+         */
         esp_err_t read_raw( uint32_t *out_raw );
 
+        
         /** Destrutor */
         ~LDRSensor(){
             this->deinit();

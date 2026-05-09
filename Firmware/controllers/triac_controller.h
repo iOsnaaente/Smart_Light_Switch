@@ -1,7 +1,6 @@
 /**
- * @file    lamp_controller.h
- * @brief   Classe de controle do acionamento da lâmpada via 
- *          detecção de zero-cross e controle de dimmer via triac.
+ * @file    triac_controller.h
+ * @brief   Classe de controle do acionamento do triac.
  * @author  Bruno Gabriel Flores Sampaio
  * @date    Criado em 13 de Abril de 2026
  */
@@ -27,20 +26,30 @@
 
 
 typedef enum {
-    LAMP_STATUS_OK,
+    LAMP_STATUS_OK = 0,
     LAMP_FULLY_ON,
     LAMP_FULLY_OFF,
     LAMP_STATUS_ERROR,
     LAMP_STATUS_OFFLINE,
 } LampStatus_t;
 
+static inline const char* lamp_status_to_string(LampStatus_t status) {
+    switch (status) {
+        case LAMP_STATUS_OK:        return "OK";
+        case LAMP_FULLY_ON:         return "FULLY_ON";
+        case LAMP_FULLY_OFF:        return "FULLY_OFF";
+        case LAMP_STATUS_ERROR:     return "ERROR";
+        case LAMP_STATUS_OFFLINE:   return "OFFLINE";
+        default:                    return "UNKNOWN";
+    }
+}
 
-class LampController {
+
+class TriacController {
     protected:
 
-        static constexpr const char *LOG_TAG = "LAMP_CNTRL";
-
-        static constexpr const char *TASK_NAME = "LampTask";
+        static constexpr const char *LOG_TAG = "TRIAC_CNTRL";
+        static constexpr const char *TASK_NAME = "TriacTask";
         static constexpr uint32_t TASK_STACK_SIZE = 4096;
         static constexpr uint32_t TASK_PRIORITY = 10;
 
@@ -51,9 +60,9 @@ class LampController {
         static void IRAM_ATTR zero_cross_ISR_Entry( void *pvarg );
 
         /**
-         * @brief   Entry point da tarefa de controle da lâmpada 
+         * @brief   Entry point da tarefa de controle do triac
          */
-        static void lamp_task_Entry( void *pvarg );
+        static void triac_task_Entry( void *pvarg );
 
     private:
     
@@ -66,12 +75,12 @@ class LampController {
         void zero_cross_ISR();
 
         /**
-         * @brief   Tarefa principal de controle da lâmpada
+         * @brief   Tarefa principal de controle do triac
          * @note    Esta função é executada em uma tarefa FreeRTOS e 
          *          é responsável por aguardar os eventos de zero-cross
          *          e acionar o triac no tempo definido pelo setpoint.
          */
-        void lamp_task();
+        void triac_task();
 
         /**
          * @brief   Aciona o pulso de Gate do triac
@@ -104,7 +113,6 @@ class LampController {
         int64_t     max_half_cycle_us;
         int64_t     zc_timeout_us;
         
-        
         uint32_t    task_stack_size;
         uint32_t    task_priority;
         
@@ -122,28 +130,36 @@ class LampController {
         LampStatus_t status;
 
         /**
-         * @brief   Construtor da classe LampController
+         * @brief   Construtor da classe TriacController
          * @note    Inicializa as variáveis com valores padrão e configura 
          *          o controlador para um estado inicial seguro: 
          *              -> lâmpada desligada e offline
          */
-        LampController() :   
+        TriacController() :   
             open_loop_anchor_us(0),
             task_handle(nullptr),
             lock(portMUX_INITIALIZER_UNLOCKED),
             initialized(false),
             running(false),
-            zero_cross_gpio(GPIO_NUM_NC), triac_gate_gpio(GPIO_NUM_NC),
+            zero_cross_gpio(GPIO_NUM_NC), 
+            triac_gate_gpio(GPIO_NUM_NC),
             zero_cross_edge(GPIO_INTR_ANYEDGE),
-            debounce_us(400), triac_gate_pulse_us(120),
+            debounce_us(400), 
+            triac_gate_pulse_us(120),
             nominal_half_cycle_us(8333),
-            min_half_cycle_us(7000), max_half_cycle_us(10000),
-            zc_timeout_us(16666), task_stack_size(TASK_STACK_SIZE),
+            min_half_cycle_us(7000), 
+            max_half_cycle_us(10000),
+            zc_timeout_us(16666), 
+            task_stack_size(TASK_STACK_SIZE),
             task_priority(TASK_PRIORITY),
             setpoint(0.0f),
-            last_zero_cross_us(0), last_half_cycle_us(8333),
-            isr_count(0), debounce_drop_count(0), triac_pulse_count(0),
-            zc_online(false), status(LAMP_STATUS_OFFLINE)
+            last_zero_cross_us(0), 
+            last_half_cycle_us(8333),
+            isr_count(0), 
+            debounce_drop_count(0), 
+            triac_pulse_count(0),
+            zc_online(false),
+            status(LAMP_STATUS_OFFLINE)
         { }
 
 

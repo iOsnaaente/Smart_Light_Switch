@@ -1,22 +1,21 @@
 /**
- * @file    lamp_controller.cpp
- * @brief   Implementação da classe de controle do acionamento da lâmpada via 
- *          detecção de zero-cross e controle de dimmer via triac.
+ * @file    triac_controller.cpp
+ * @brief   Implementação da classe de controle do acionamento do triac.
  * @author  Bruno Gabriel Flores Sampaio
  * @date    Criado em 13 de Abril de 2026
  */
 
-#include "lamp_controller.h"
+#include "triac_controller.h"
 
 
-void IRAM_ATTR LampController::zero_cross_ISR_Entry( void *pvarg ){
-	LampController *self = static_cast<LampController *>( pvarg );
+void IRAM_ATTR TriacController::zero_cross_ISR_Entry( void *pvarg ){
+	TriacController *self = static_cast<TriacController *>( pvarg );
 	if (self != nullptr) {
 		self->zero_cross_ISR();
 	}
 }
 
-void IRAM_ATTR LampController::zero_cross_ISR() {
+void IRAM_ATTR TriacController::zero_cross_ISR() {
 	BaseType_t hp_task_woken = pdFALSE;
 	int64_t now_us = esp_timer_get_time();
 	this->last_zero_cross_us = now_us;
@@ -29,19 +28,20 @@ void IRAM_ATTR LampController::zero_cross_ISR() {
 	}
 }
 
-void LampController::lamp_task_Entry( void *pvarg ){
-	LampController *self = static_cast<LampController *>( pvarg );
+void TriacController::triac_task_Entry( void *pvarg ){
+	TriacController *self = static_cast<TriacController *>( pvarg );
 	if (self != nullptr) {
-		self->lamp_task();
+		self->triac_task();
 	}
 	vTaskDelete(nullptr);
 }
 
-void LampController::lamp_task(){
+void TriacController::triac_task(){
 	const int64_t safety_margin_us = 20;
 	int64_t prev_zc_us = 0;
 
 	while (this->running) {
+		
 		int64_t half_cycle_us;
         int64_t cycle_start_us;
         bool is_online;
@@ -131,15 +131,16 @@ void LampController::lamp_task(){
 }
 
 
-void LampController::triac_fire_pulse() {
+void TriacController::triac_fire_pulse() {
 	gpio_set_level( this->triac_gate_gpio, true );
 	esp_rom_delay_us( this->triac_gate_pulse_us );
 	gpio_set_level( this->triac_gate_gpio, false );
 }
 
 
-esp_err_t LampController::init(
-	gpio_num_t zc_gpio, gpio_num_t triac_gpio
+esp_err_t TriacController::init(
+	gpio_num_t zc_gpio, 
+	gpio_num_t triac_gpio
 ){
 	/* Verifica se Pinos de ZC e Triac são válidos */
 	if ( zc_gpio < 0 || triac_gpio < 0 ) {
@@ -220,7 +221,7 @@ esp_err_t LampController::init(
 }
 
 
-esp_err_t LampController::start(){
+esp_err_t TriacController::start(){
 	if (!this->initialized) {
 		return ESP_ERR_INVALID_STATE;
 	}
@@ -232,12 +233,16 @@ esp_err_t LampController::start(){
 	);
 	if (handler_ret != ESP_OK) {
 		this->status = LAMP_STATUS_ERROR;
-		ESP_LOGE(LOG_TAG, "START: Failed to add ISR handler: %s", esp_err_to_name(handler_ret));
+		ESP_LOGE(
+			LOG_TAG, 
+			"START: Failed to add ISR handler: %s", 
+			esp_err_to_name(handler_ret)
+		);
 		return handler_ret;
 	}
 	this->running = true;
 	BaseType_t created = xTaskCreatePinnedToCore(
-		lamp_task_Entry,
+		triac_task_Entry,
 		"LampTask",
 		task_stack_size / sizeof(StackType_t),
 		this,
@@ -257,7 +262,7 @@ esp_err_t LampController::start(){
 }
 
 
-esp_err_t LampController::stop(){
+esp_err_t TriacController::stop(){
 	if (!this->initialized) {
 		ESP_LOGE( LOG_TAG, "STOP: Controller not initialized");
 		return ESP_ERR_INVALID_STATE;
@@ -281,7 +286,7 @@ esp_err_t LampController::stop(){
 }
 
 
-void LampController::wait_until_us( int64_t target_us ){
+void TriacController::wait_until_us( int64_t target_us ){
 	int64_t now_us;
 	while ((now_us = esp_timer_get_time()) < target_us) {
 		int64_t remaining = target_us - now_us;
