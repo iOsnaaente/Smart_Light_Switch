@@ -1,13 +1,3 @@
-build/
-venv/
-.venv/
-
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.log
-
 # Miscellaneous
 *.class
 *.log
@@ -53,3 +43,5 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+./claude/

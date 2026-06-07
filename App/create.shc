@@ -1,0 +1,50 @@
+#!/bin/bash
+
+echo "Criando estrutura Smart Light Switch..."
+
+mkdir -p lib/{core/{theme,routes,constants},models,services,repositories,providers}
+mkdir -p lib/screens/{login,dashboard,control,settings}
+mkdir -p lib/widgets
+
+touch lib/main.dart
+
+# Core
+touch lib/core/theme/app_theme.dart
+touch lib/core/routes/app_routes.dart
+touch lib/core/constants/api_constants.dart
+
+# Models
+touch lib/models/device.dart
+touch lib/models/telemetry.dart
+touch lib/models/user.dart
+
+# Services
+touch lib/services/api_service.dart
+touch lib/services/auth_service.dart
+touch lib/services/device_service.dart
+
+# Repositories
+touch lib/repositories/auth_repository.dart
+touch lib/repositories/device_repository.dart
+
+# Providers
+touch lib/providers/auth_provider.dart
+touch lib/providers/device_provider.dart
+
+# Screens
+touch lib/screens/login/login_page.dart
+
+touch lib/screens/dashboard/devices_page.dart
+
+touch lib/screens/control/control_page.dart
+
+touch lib/screens/settings/device_settings_page.dart
+
+# Widgets
+touch lib/widgets/app_scaffold.dart
+touch lib/widgets/device_card.dart
+touch lib/widgets/lux_gauge.dart
+touch lib/widgets/dimmer_slider.dart
+touch lib/widgets/status_chip.dart
+
+echo "Estrutura criada com sucesso!"
