@@ -3,9 +3,9 @@ services:
     image: postgres:16-alpine
     container_name: smart_switch_postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: smart_switch
+      POSTGRES_USER:      postgres
+      POSTGRES_PASSWORD:  ${POSTGRES_PASSWORD}
+      POSTGRES_DB:        smart_switch
     ports:
       - "5432:5432"
     volumes:
@@ -27,14 +27,14 @@ services:
       - mosquitto_log:/mosquitto/log
 
   api:
-    build: .
+    image: iosnaaente/smart-switch-backend:latest
     container_name: smart_switch_api
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/smart_switch
-      MQTT_HOST: mosquitto
-      MQTT_PORT: 1883
-      AUTH_USERNAME: admin
-      AUTH_PASSWORD: admin
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      MQTT_HOST: ${MQTT_HOST:-mosquitto}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      AUTH_USERNAME: ${AUTH_USERNAME}
+      AUTH_PASSWORD: ${AUTH_PASSWORD}
     ports:
       - "8000:8000"
     depends_on:
@@ -44,13 +44,14 @@ services:
         condition: service_started
 
   mqtt-consumer:
+    image: iosnaaente/smart-switch-backend:latest
     build: .
     container_name: smart_switch_mqtt_consumer
     command: ["python", "-m", "app.mqtt.consumer"]
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/smart_switch
-      MQTT_HOST: mosquitto
-      MQTT_PORT: 1883
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      MQTT_HOST: ${MQTT_HOST:-mosquitto}
+      MQTT_PORT: ${MQTT_PORT:-1883}
     depends_on:
       postgres:
         condition: service_healthy

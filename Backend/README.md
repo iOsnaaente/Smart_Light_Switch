@@ -5,6 +5,27 @@ ESP32, com comunicação via MQTT, persistência em PostgreSQL e API HTTP em Fas
 
 ## Arquitetura
 
+```txt
+Flutter App
+      │
+      ▼
+  FastAPI
+      │
+ ┌────┴────┐
+ ▼         ▼
+Postgres  MQTT Publish
+               │
+               ▼
+         Mosquitto Broker
+               │
+        ┌──────┴──────┐
+        ▼             ▼
+      ESP32    MQTT Consumer
+                      │
+                      ▼
+                 PostgreSQL
+```
+
 - **mosquitto**: broker MQTT.
 - **postgres**: banco de dados relacional.
 - **api**: API FastAPI que autentica usuários, publica comandos MQTT e consulta dados no banco.
