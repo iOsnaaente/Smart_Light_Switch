@@ -7,6 +7,12 @@ on:
     paths:
       - 'Backend/**'
 
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+
 jobs:
   docker:
     runs-on: ubuntu-latest
