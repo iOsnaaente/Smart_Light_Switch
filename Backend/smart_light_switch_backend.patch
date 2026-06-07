@@ -1,0 +1,846 @@
+From 81c8830c6d8df57d8314cf1d7bd5635842c5d47d Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 7 Jun 2026 00:42:53 +0000
+Subject: [PATCH] Add IoT backend PoC: FastAPI + MQTT + PostgreSQL stack
+
+Implements device control/telemetry API with simple header-based auth,
+SQLAlchemy models (devices, device_state, telemetry), an MQTT publisher
+for relay commands, an MQTT consumer service that persists state and
+telemetry from ESP32 devices, plus Docker/Compose setup with Mosquitto
+and Postgres.
+
+https://claude.ai/code/session_011WYFoEFGHoYvnzZhvFAzFN
+---
+ Backend/.env.example                    |   5 +
+ Backend/Dockerfile                      |  12 ++
+ Backend/README.md                       | 148 ++++++++++++++++++++++++
+ Backend/app/__init__.py                 |   0
+ Backend/app/api/__init__.py             |   0
+ Backend/app/api/auth.py                 |  12 ++
+ Backend/app/api/devices.py              |  37 ++++++
+ Backend/app/core/__init__.py            |   0
+ Backend/app/core/auth.py                |  21 ++++
+ Backend/app/core/config.py              |  19 +++
+ Backend/app/db/__init__.py              |   0
+ Backend/app/db/session.py               |  17 +++
+ Backend/app/main.py                     |  29 +++++
+ Backend/app/models/__init__.py          |   5 +
+ Backend/app/models/device.py            |  15 +++
+ Backend/app/models/device_state.py      |  17 +++
+ Backend/app/models/telemetry.py         |  18 +++
+ Backend/app/mqtt/__init__.py            |   0
+ Backend/app/mqtt/consumer.py            |  69 +++++++++++
+ Backend/app/mqtt/publisher.py           |  27 +++++
+ Backend/app/schemas/__init__.py         |   0
+ Backend/app/schemas/auth.py             |  10 ++
+ Backend/app/schemas/device.py           |  28 +++++
+ Backend/app/services/__init__.py        |   0
+ Backend/app/services/device_service.py  |  60 ++++++++++
+ Backend/docker-compose.yml              |  63 ++++++++++
+ Backend/mosquitto/config/mosquitto.conf |   6 +
+ Backend/requirements.txt                |   7 ++
+ 28 files changed, 625 insertions(+)
+ create mode 100644 Backend/.env.example
+ create mode 100644 Backend/Dockerfile
+ create mode 100644 Backend/README.md
+ create mode 100644 Backend/app/__init__.py
+ create mode 100644 Backend/app/api/__init__.py
+ create mode 100644 Backend/app/api/auth.py
+ create mode 100644 Backend/app/api/devices.py
+ create mode 100644 Backend/app/core/__init__.py
+ create mode 100644 Backend/app/core/auth.py
+ create mode 100644 Backend/app/core/config.py
+ create mode 100644 Backend/app/db/__init__.py
+ create mode 100644 Backend/app/db/session.py
+ create mode 100644 Backend/app/main.py
+ create mode 100644 Backend/app/models/__init__.py
+ create mode 100644 Backend/app/models/device.py
+ create mode 100644 Backend/app/models/device_state.py
+ create mode 100644 Backend/app/models/telemetry.py
+ create mode 100644 Backend/app/mqtt/__init__.py
+ create mode 100644 Backend/app/mqtt/consumer.py
+ create mode 100644 Backend/app/mqtt/publisher.py
+ create mode 100644 Backend/app/schemas/__init__.py
+ create mode 100644 Backend/app/schemas/auth.py
+ create mode 100644 Backend/app/schemas/device.py
+ create mode 100644 Backend/app/services/__init__.py
+ create mode 100644 Backend/app/services/device_service.py
+ create mode 100644 Backend/docker-compose.yml
+ create mode 100644 Backend/mosquitto/config/mosquitto.conf
+ create mode 100644 Backend/requirements.txt
+
+diff --git a/Backend/.env.example b/Backend/.env.example
+new file mode 100644
+index 0000000..8c4a5d4
+--- /dev/null
++++ b/Backend/.env.example
+@@ -0,0 +1,5 @@
++DATABASE_URL=postgresql://postgres:postgres@postgres:5432/smart_switch
++MQTT_HOST=mosquitto
++MQTT_PORT=1883
++AUTH_USERNAME=admin
++AUTH_PASSWORD=admin
+diff --git a/Backend/Dockerfile b/Backend/Dockerfile
+new file mode 100644
+index 0000000..f1dc70a
+--- /dev/null
++++ b/Backend/Dockerfile
+@@ -0,0 +1,12 @@
++FROM python:3.12-slim
++
++WORKDIR /app
++
++COPY requirements.txt .
++RUN pip install --no-cache-dir -r requirements.txt
++
++COPY app ./app
++
++EXPOSE 8000
++
++CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+diff --git a/Backend/README.md b/Backend/README.md
+new file mode 100644
+index 0000000..dbd5e2e
+--- /dev/null
++++ b/Backend/README.md
+@@ -0,0 +1,148 @@
++# Smart Light Switch — Backend (PoC IoT)
++
++Backend de prova de conceito para controle de interruptores inteligentes baseados em
++ESP32, com comunicação via MQTT, persistência em PostgreSQL e API HTTP em FastAPI.
++
++## Arquitetura
++
++- **mosquitto**: broker MQTT.
++- **postgres**: banco de dados relacional.
++- **api**: API FastAPI que autentica usuários, publica comandos MQTT e consulta dados no banco.
++- **mqtt-consumer**: serviço que assina os tópicos `devices/+/state` e `devices/+/telemetry`,
++  persistindo o estado e a telemetria dos dispositivos no banco.
++
++## Tópicos MQTT
++
++| Tópico                         | Direção          | Payload                                              |
++|--------------------------------|------------------|------------------------------------------------------|
++| `devices/{device_id}/command`  | API → dispositivo | `{"relay": true}`                                    |
++| `devices/{device_id}/state`    | dispositivo → API | `{"relay": true}`                                    |
++| `devices/{device_id}/telemetry`| dispositivo → API | `{"sp": 220.1, "mv": 219.8, "current": 0.55, "power": 121.0}` |
++
++## Autenticação
++
++Autenticação simplificada via middleware HTTP, sem JWT, sem cadastro e sem
++recuperação de senha. As credenciais fixas são `admin` / `admin`.
++
++Endpoints (exceto `/login` e a documentação) exigem os headers:
++
++```
++X-Username: admin
++X-Password: admin
++```
++
++## Como executar
++
++Pré-requisitos: Docker e Docker Compose.
++
++```bash
++cd Backend
++docker compose up --build
++```
++
++Isso inicia os containers `postgres`, `mosquitto`, `api` e `mqtt-consumer`.
++A API ficará disponível em `http://localhost:8000` e a documentação interativa em
++`http://localhost:8000/docs`.
++
++As tabelas (`devices`, `device_state`, `telemetry`) são criadas automaticamente
++na inicialização da API e do consumidor MQTT.
++
++## Endpoints
++
++### `POST /login`
++
++Valida usuário e senha fixos.
++
++```bash
++curl -X POST http://localhost:8000/login \
++  -H "Content-Type: application/json" \
++  -d '{"username": "admin", "password": "admin"}'
++```
++
++Resposta:
++
++```json
++{"success": true}
++```
++
++### `POST /devices/{device_id}/relay/on`
++
++Publica `{"relay": true}` em `devices/{device_id}/command`.
++
++```bash
++curl -X POST http://localhost:8000/devices/switch01/relay/on \
++  -H "X-Username: admin" -H "X-Password: admin"
++```
++
++### `POST /devices/{device_id}/relay/off`
++
++Publica `{"relay": false}` em `devices/{device_id}/command`.
++
++```bash
++curl -X POST http://localhost:8000/devices/switch01/relay/off \
++  -H "X-Username: admin" -H "X-Password: admin"
++```
++
++### `GET /devices/{device_id}/state`
++
++Retorna o último estado do dispositivo armazenado no banco.
++
++```bash
++curl http://localhost:8000/devices/switch01/state \
++  -H "X-Username: admin" -H "X-Password: admin"
++```
++
++### `GET /devices/{device_id}/telemetry/latest`
++
++Retorna o último registro de telemetria do dispositivo.
++
++```bash
++curl http://localhost:8000/devices/switch01/telemetry/latest \
++  -H "X-Username: admin" -H "X-Password: admin"
++```
++
++## Testando com mosquitto_pub (simulando o ESP32)
++
++Simular o envio de estado e telemetria por um dispositivo `switch01`:
++
++```bash
++# Estado
++mosquitto_pub -h localhost -t devices/switch01/state -m '{"relay": true}'
++
++# Telemetria
++mosquitto_pub -h localhost -t devices/switch01/telemetry \
++  -m '{"sp": 220.1, "mv": 219.8, "current": 0.55, "power": 121.0}'
++```
++
++Para escutar comandos publicados pela API:
++
++```bash
++mosquitto_sub -h localhost -t 'devices/+/command' -v
++```
++
++## Estrutura de diretórios
++
++```
++Backend/
++├── app/
++│   ├── api/            # Rotas HTTP (login, devices)
++│   ├── core/           # Configuração e middleware de autenticação
++│   ├── db/             # Sessão e Base do SQLAlchemy
++│   ├── models/         # Modelos ORM (Device, DeviceState, Telemetry)
++│   ├── mqtt/           # Publisher (API -> broker) e Consumer (broker -> banco)
++│   ├── schemas/        # Schemas Pydantic
++│   ├── services/       # Regras de acesso a dados dos dispositivos
++│   └── main.py         # Inicialização da aplicação FastAPI
++├── mosquitto/
++│   └── config/mosquitto.conf
++├── Dockerfile
++├── docker-compose.yml
++├── requirements.txt
++└── .env.example
++```
++
++## Modelo de dados
++
++- **devices**: `id`, `device_id`, `name`, `created_at`
++- **device_state**: `id`, `device_id`, `relay`, `updated_at`
++- **telemetry**: `id`, `device_id`, `sp`, `mv`, `current`, `power`, `timestamp`
+diff --git a/Backend/app/__init__.py b/Backend/app/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/Backend/app/api/__init__.py b/Backend/app/api/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/Backend/app/api/auth.py b/Backend/app/api/auth.py
+new file mode 100644
+index 0000000..fe40f85
+--- /dev/null
++++ b/Backend/app/api/auth.py
+@@ -0,0 +1,12 @@
++from fastapi import APIRouter
++
++from app.schemas.auth import LoginRequest, LoginResponse
++from app.core.config import settings
++
++router = APIRouter(tags=["auth"])
++
++
++@router.post("/login", response_model=LoginResponse)
++def login(payload: LoginRequest):
++    success = payload.username == settings.auth_username and payload.password == settings.auth_password
++    return LoginResponse(success=success)
+diff --git a/Backend/app/api/devices.py b/Backend/app/api/devices.py
+new file mode 100644
+index 0000000..36bafea
+--- /dev/null
++++ b/Backend/app/api/devices.py
+@@ -0,0 +1,37 @@
++from fastapi import APIRouter, Depends, HTTPException
++from sqlalchemy.orm import Session
++
++from app.db.session import get_db
++from app.mqtt import publisher
++from app.schemas.device import DeviceStateResponse, TelemetryResponse, RelayCommandResponse
++from app.services import device_service
++
++router = APIRouter(prefix="/devices", tags=["devices"])
++
++
++@router.post("/{device_id}/relay/on", response_model=RelayCommandResponse)
++def turn_relay_on(device_id: str):
++    published = publisher.publish_command(device_id, True)
++    return RelayCommandResponse(device_id=device_id, relay=True, published=published)
++
++
++@router.post("/{device_id}/relay/off", response_model=RelayCommandResponse)
++def turn_relay_off(device_id: str):
++    published = publisher.publish_command(device_id, False)
++    return RelayCommandResponse(device_id=device_id, relay=False, published=published)
++
++
++@router.get("/{device_id}/state", response_model=DeviceStateResponse)
++def get_state(device_id: str, db: Session = Depends(get_db)):
++    state = device_service.get_latest_state(db, device_id)
++    if state is None:
++        raise HTTPException(status_code=404, detail="No state found for this device")
++    return state
++
++
++@router.get("/{device_id}/telemetry/latest", response_model=TelemetryResponse)
++def get_latest_telemetry(device_id: str, db: Session = Depends(get_db)):
++    telemetry = device_service.get_latest_telemetry(db, device_id)
++    if telemetry is None:
++        raise HTTPException(status_code=404, detail="No telemetry found for this device")
++    return telemetry
+diff --git a/Backend/app/core/__init__.py b/Backend/app/core/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/Backend/app/core/auth.py b/Backend/app/core/auth.py
+new file mode 100644
+index 0000000..01dbfff
+--- /dev/null
++++ b/Backend/app/core/auth.py
+@@ -0,0 +1,21 @@
++from starlette.middleware.base import BaseHTTPMiddleware
++from starlette.requests import Request
++from starlette.responses import JSONResponse
++
++from app.core.config import settings
++
++PUBLIC_PATHS = {"/login", "/docs", "/openapi.json", "/redoc"}
++
++
++class SimpleAuthMiddleware(BaseHTTPMiddleware):
++    async def dispatch(self, request: Request, call_next):
++        if request.url.path in PUBLIC_PATHS:
++            return await call_next(request)
++
++        username = request.headers.get("X-Username")
++        password = request.headers.get("X-Password")
++
++        if username != settings.auth_username or password != settings.auth_password:
++            return JSONResponse(status_code=401, content={"detail": "Invalid credentials"})
++
++        return await call_next(request)
+diff --git a/Backend/app/core/config.py b/Backend/app/core/config.py
+new file mode 100644
+index 0000000..4c9de90
+--- /dev/null
++++ b/Backend/app/core/config.py
+@@ -0,0 +1,19 @@
++from pydantic_settings import BaseSettings
++
++
++class Settings(BaseSettings):
++    database_url: str = "postgresql://postgres:postgres@postgres:5432/smart_switch"
++
++    mqtt_host: str = "mosquitto"
++    mqtt_port: int = 1883
++    mqtt_username: str | None = None
++    mqtt_password: str | None = None
++
++    auth_username: str = "admin"
++    auth_password: str = "admin"
++
++    class Config:
++        env_file = ".env"
++
++
++settings = Settings()
+diff --git a/Backend/app/db/__init__.py b/Backend/app/db/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/Backend/app/db/session.py b/Backend/app/db/session.py
+new file mode 100644
+index 0000000..07d8d0b
+--- /dev/null
++++ b/Backend/app/db/session.py
+@@ -0,0 +1,17 @@
++from sqlalchemy import create_engine
++from sqlalchemy.orm import sessionmaker, declarative_base
++
++from app.core.config import settings
++
++engine = create_engine(settings.database_url, pool_pre_ping=True)
++SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
++
++Base = declarative_base()
++
++
++def get_db():
++    db = SessionLocal()
++    try:
++        yield db
++    finally:
++        db.close()
+diff --git a/Backend/app/main.py b/Backend/app/main.py
+new file mode 100644
+index 0000000..5f01992
+--- /dev/null
++++ b/Backend/app/main.py
+@@ -0,0 +1,29 @@
++from contextlib import asynccontextmanager
++
++from fastapi import FastAPI
++
++from app.api import auth, devices
++from app.core.auth import SimpleAuthMiddleware
++from app.db.session import Base, engine
++from app.mqtt import publisher
++
++
++@asynccontextmanager
++async def lifespan(app: FastAPI):
++    Base.metadata.create_all(bind=engine)
++    publisher.connect()
++    yield
++    publisher.disconnect()
++
++
++app = FastAPI(title="Smart Light Switch API", lifespan=lifespan)
++
++app.add_middleware(SimpleAuthMiddleware)
++
++app.include_router(auth.router)
++app.include_router(devices.router)
++
++
++@app.get("/health")
++def health():
++    return {"status": "ok"}
+diff --git a/Backend/app/models/__init__.py b/Backend/app/models/__init__.py
+new file mode 100644
+index 0000000..b279b1b
+--- /dev/null
++++ b/Backend/app/models/__init__.py
+@@ -0,0 +1,5 @@
++from app.models.device import Device
++from app.models.device_state import DeviceState
++from app.models.telemetry import Telemetry
++
++__all__ = ["Device", "DeviceState", "Telemetry"]
+diff --git a/Backend/app/models/device.py b/Backend/app/models/device.py
+new file mode 100644
+index 0000000..6cb917f
+--- /dev/null
++++ b/Backend/app/models/device.py
+@@ -0,0 +1,15 @@
++from datetime import datetime
++
++from sqlalchemy import String, DateTime, func
++from sqlalchemy.orm import Mapped, mapped_column
++
++from app.db.session import Base
++
++
++class Device(Base):
++    __tablename__ = "devices"
++
++    id: Mapped[int] = mapped_column(primary_key=True, index=True)
++    device_id: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
++    name: Mapped[str] = mapped_column(String, nullable=True)
++    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+diff --git a/Backend/app/models/device_state.py b/Backend/app/models/device_state.py
+new file mode 100644
+index 0000000..534f906
+--- /dev/null
++++ b/Backend/app/models/device_state.py
+@@ -0,0 +1,17 @@
++from datetime import datetime
++
++from sqlalchemy import String, Boolean, DateTime, func
++from sqlalchemy.orm import Mapped, mapped_column
++
++from app.db.session import Base
++
++
++class DeviceState(Base):
++    __tablename__ = "device_state"
++
++    id: Mapped[int] = mapped_column(primary_key=True, index=True)
++    device_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
++    relay: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
++    updated_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
++    )
+diff --git a/Backend/app/models/telemetry.py b/Backend/app/models/telemetry.py
+new file mode 100644
+index 0000000..0555bd5
+--- /dev/null
++++ b/Backend/app/models/telemetry.py
+@@ -0,0 +1,18 @@
++from datetime import datetime
++
++from sqlalchemy import String, Float, DateTime, func
++from sqlalchemy.orm import Mapped, mapped_column
++
++from app.db.session import Base
++
++
++class Telemetry(Base):
++    __tablename__ = "telemetry"
++
++    id: Mapped[int] = mapped_column(primary_key=True, index=True)
++    device_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
++    sp: Mapped[float] = mapped_column(Float, nullable=True)
++    mv: Mapped[float] = mapped_column(Float, nullable=True)
++    current: Mapped[float] = mapped_column(Float, nullable=True)
++    power: Mapped[float] = mapped_column(Float, nullable=True)
++    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+diff --git a/Backend/app/mqtt/__init__.py b/Backend/app/mqtt/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/Backend/app/mqtt/consumer.py b/Backend/app/mqtt/consumer.py
+new file mode 100644
+index 0000000..d354f29
+--- /dev/null
++++ b/Backend/app/mqtt/consumer.py
+@@ -0,0 +1,69 @@
++import json
++import logging
++
++import paho.mqtt.client as mqtt
++
++from app.core.config import settings
++from app.db.session import Base, engine, SessionLocal
++from app.services import device_service
++
++logging.basicConfig(level=logging.INFO)
++logger = logging.getLogger("mqtt-consumer")
++
++STATE_TOPIC = "devices/+/state"
++TELEMETRY_TOPIC = "devices/+/telemetry"
++
++
++def _extract_device_id(topic: str) -> str:
++    return topic.split("/")[1]
++
++
++def _on_connect(client, userdata, flags, reason_code, properties=None):
++    logger.info("Connected to MQTT broker with reason code %s", reason_code)
++    client.subscribe([(STATE_TOPIC, 1), (TELEMETRY_TOPIC, 1)])
++
++
++def _on_message(client, userdata, msg: mqtt.MQTTMessage):
++    try:
++        device_id = _extract_device_id(msg.topic)
++        payload = json.loads(msg.payload.decode("utf-8"))
++    except (IndexError, ValueError, UnicodeDecodeError) as exc:
++        logger.warning("Ignoring invalid message on %s: %s", msg.topic, exc)
++        return
++
++    db = SessionLocal()
++    try:
++        if msg.topic.endswith("/state"):
++            relay = bool(payload.get("relay"))
++            device_service.upsert_state(db, device_id, relay)
++            logger.info("Updated state for %s: relay=%s", device_id, relay)
++        elif msg.topic.endswith("/telemetry"):
++            device_service.insert_telemetry(
++                db,
++                device_id,
++                sp=payload.get("sp"),
++                mv=payload.get("mv"),
++                current=payload.get("current"),
++                power=payload.get("power"),
++            )
++            logger.info("Inserted telemetry for %s", device_id)
++    finally:
++        db.close()
++
++
++def main():
++    Base.metadata.create_all(bind=engine)
++
++    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="mqtt-consumer")
++    if settings.mqtt_username:
++        client.username_pw_set(settings.mqtt_username, settings.mqtt_password)
++
++    client.on_connect = _on_connect
++    client.on_message = _on_message
++
++    client.connect(settings.mqtt_host, settings.mqtt_port, keepalive=60)
++    client.loop_forever()
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/Backend/app/mqtt/publisher.py b/Backend/app/mqtt/publisher.py
+new file mode 100644
+index 0000000..8550238
+--- /dev/null
++++ b/Backend/app/mqtt/publisher.py
+@@ -0,0 +1,27 @@
++import json
++
++import paho.mqtt.client as mqtt
++
++from app.core.config import settings
++
++_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="fastapi-publisher")
++
++if settings.mqtt_username:
++    _client.username_pw_set(settings.mqtt_username, settings.mqtt_password)
++
++
++def connect():
++    _client.connect(settings.mqtt_host, settings.mqtt_port, keepalive=60)
++    _client.loop_start()
++
++
++def disconnect():
++    _client.loop_stop()
++    _client.disconnect()
++
++
++def publish_command(device_id: str, relay: bool) -> bool:
++    topic = f"devices/{device_id}/command"
++    payload = json.dumps({"relay": relay})
++    result = _client.publish(topic, payload, qos=1)
++    return result.rc == mqtt.MQTT_ERR_SUCCESS
+diff --git a/Backend/app/schemas/__init__.py b/Backend/app/schemas/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/Backend/app/schemas/auth.py b/Backend/app/schemas/auth.py
+new file mode 100644
+index 0000000..eab5fa3
+--- /dev/null
++++ b/Backend/app/schemas/auth.py
+@@ -0,0 +1,10 @@
++from pydantic import BaseModel
++
++
++class LoginRequest(BaseModel):
++    username: str
++    password: str
++
++
++class LoginResponse(BaseModel):
++    success: bool
+diff --git a/Backend/app/schemas/device.py b/Backend/app/schemas/device.py
+new file mode 100644
+index 0000000..56426ec
+--- /dev/null
++++ b/Backend/app/schemas/device.py
+@@ -0,0 +1,28 @@
++from datetime import datetime
++
++from pydantic import BaseModel, ConfigDict
++
++
++class DeviceStateResponse(BaseModel):
++    model_config = ConfigDict(from_attributes=True)
++
++    device_id: str
++    relay: bool
++    updated_at: datetime
++
++
++class TelemetryResponse(BaseModel):
++    model_config = ConfigDict(from_attributes=True)
++
++    device_id: str
++    sp: float | None = None
++    mv: float | None = None
++    current: float | None = None
++    power: float | None = None
++    timestamp: datetime
++
++
++class RelayCommandResponse(BaseModel):
++    device_id: str
++    relay: bool
++    published: bool
+diff --git a/Backend/app/services/__init__.py b/Backend/app/services/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/Backend/app/services/device_service.py b/Backend/app/services/device_service.py
+new file mode 100644
+index 0000000..7741a50
+--- /dev/null
++++ b/Backend/app/services/device_service.py
+@@ -0,0 +1,60 @@
++from sqlalchemy.orm import Session
++
++from app.models import Device, DeviceState, Telemetry
++
++
++def get_or_create_device(db: Session, device_id: str) -> Device:
++    device = db.query(Device).filter(Device.device_id == device_id).first()
++    if device is None:
++        device = Device(device_id=device_id, name=device_id)
++        db.add(device)
++        db.commit()
++        db.refresh(device)
++    return device
++
++
++def get_latest_state(db: Session, device_id: str) -> DeviceState | None:
++    return (
++        db.query(DeviceState)
++        .filter(DeviceState.device_id == device_id)
++        .order_by(DeviceState.updated_at.desc())
++        .first()
++    )
++
++
++def get_latest_telemetry(db: Session, device_id: str) -> Telemetry | None:
++    return (
++        db.query(Telemetry)
++        .filter(Telemetry.device_id == device_id)
++        .order_by(Telemetry.timestamp.desc())
++        .first()
++    )
++
++
++def upsert_state(db: Session, device_id: str, relay: bool) -> DeviceState:
++    get_or_create_device(db, device_id)
++    state = db.query(DeviceState).filter(DeviceState.device_id == device_id).first()
++    if state is None:
++        state = DeviceState(device_id=device_id, relay=relay)
++        db.add(state)
++    else:
++        state.relay = relay
++    db.commit()
++    db.refresh(state)
++    return state
++
++
++def insert_telemetry(
++    db: Session,
++    device_id: str,
++    sp: float | None,
++    mv: float | None,
++    current: float | None,
++    power: float | None,
++) -> Telemetry:
++    get_or_create_device(db, device_id)
++    telemetry = Telemetry(device_id=device_id, sp=sp, mv=mv, current=current, power=power)
++    db.add(telemetry)
++    db.commit()
++    db.refresh(telemetry)
++    return telemetry
+diff --git a/Backend/docker-compose.yml b/Backend/docker-compose.yml
+new file mode 100644
+index 0000000..a60fd7e
+--- /dev/null
++++ b/Backend/docker-compose.yml
+@@ -0,0 +1,63 @@
++services:
++  postgres:
++    image: postgres:16-alpine
++    container_name: smart_switch_postgres
++    environment:
++      POSTGRES_USER: postgres
++      POSTGRES_PASSWORD: postgres
++      POSTGRES_DB: smart_switch
++    ports:
++      - "5432:5432"
++    volumes:
++      - postgres_data:/var/lib/postgresql/data
++    healthcheck:
++      test: ["CMD-SHELL", "pg_isready -U postgres"]
++      interval: 5s
++      timeout: 5s
++      retries: 5
++
++  mosquitto:
++    image: eclipse-mosquitto:2
++    container_name: smart_switch_mosquitto
++    ports:
++      - "1883:1883"
++    volumes:
++      - ./mosquitto/config:/mosquitto/config
++      - mosquitto_data:/mosquitto/data
++      - mosquitto_log:/mosquitto/log
++
++  api:
++    build: .
++    container_name: smart_switch_api
++    environment:
++      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/smart_switch
++      MQTT_HOST: mosquitto
++      MQTT_PORT: 1883
++      AUTH_USERNAME: admin
++      AUTH_PASSWORD: admin
++    ports:
++      - "8000:8000"
++    depends_on:
++      postgres:
++        condition: service_healthy
++      mosquitto:
++        condition: service_started
++
++  mqtt-consumer:
++    build: .
++    container_name: smart_switch_mqtt_consumer
++    command: ["python", "-m", "app.mqtt.consumer"]
++    environment:
++      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/smart_switch
++      MQTT_HOST: mosquitto
++      MQTT_PORT: 1883
++    depends_on:
++      postgres:
++        condition: service_healthy
++      mosquitto:
++        condition: service_started
++
++volumes:
++  postgres_data:
++  mosquitto_data:
++  mosquitto_log:
+diff --git a/Backend/mosquitto/config/mosquitto.conf b/Backend/mosquitto/config/mosquitto.conf
+new file mode 100644
+index 0000000..94cec1d
+--- /dev/null
++++ b/Backend/mosquitto/config/mosquitto.conf
+@@ -0,0 +1,6 @@
++listener 1883
++allow_anonymous true
++
++persistence true
++persistence_location /mosquitto/data/
++log_dest stdout
+diff --git a/Backend/requirements.txt b/Backend/requirements.txt
+new file mode 100644
+index 0000000..3022214
+--- /dev/null
++++ b/Backend/requirements.txt
+@@ -0,0 +1,7 @@
++fastapi==0.115.0
++uvicorn[standard]==0.30.6
++sqlalchemy==2.0.35
++psycopg2-binary==2.9.9
++paho-mqtt==2.1.0
++pydantic==2.9.2
++pydantic-settings==2.5.2
+-- 
+2.43.0
+

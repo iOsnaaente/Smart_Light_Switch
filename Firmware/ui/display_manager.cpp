@@ -1,12 +1,7 @@
+#include "../board_config.h"
 #include "display_manager.h"
 
-#include "../board_config.h"
-
-#include <esp_log.h>
-
-extern "C" {
 #include "ili9340.h"
-}
 
 #include "images/image_olharpredador.h"
 #include "images/image_lindademais.h"
@@ -16,6 +11,8 @@ extern "C" {
 #include "images/image_natal.h"
 #include "images/image_noiva.h"
 #include "images/image_linda.h"
+
+#include <esp_log.h>
 
 static const char *LOG_TAG = "DISPLAY_MGR";
 static constexpr size_t IMAGE_BUFFER_SIZE = 512;
@@ -43,9 +40,10 @@ static void render_image(TFT_t *dev, const uint8_t *image_data, int width, int h
 
     for (int y = 0; y < output_height; y++) {
         for (int x = 0; x < output_width; x += IMAGE_BUFFER_SIZE) {
-            const int pixels_this_batch = (x + IMAGE_BUFFER_SIZE > output_width)
-                                          ? (output_width - x)
-                                          : IMAGE_BUFFER_SIZE;
+            const int pixels_this_batch = 
+                (x + IMAGE_BUFFER_SIZE > output_width)
+                    ? (output_width - x)
+                    : IMAGE_BUFFER_SIZE;
             for (int i = 0; i < pixels_this_batch; i++) {
                 int source_x = x + i;
                 int source_y = y;
