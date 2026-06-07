@@ -1,17 +1,21 @@
-file(GLOB IMAGE_SOURCES "${CMAKE_CURRENT_LIST_DIR}/images/image_*.c")
-
 idf_component_register(
     SRCS
-        "ui_stub.cpp"
-        "display_manager.cpp"
-        ${IMAGE_SOURCES}
+        "lvgl_port.cpp"
+        "ui_widgets.cpp"
+        "ui_manager.cpp"
+        "screens/screen_main.cpp"
+        "screens/screen_auto.cpp"
+        "screens/screen_settings.cpp"
     INCLUDE_DIRS
         "."
     REQUIRES
         system
         lvgl
+        esp_event
         esp_timer
+        esp_driver_gpio
         esp_driver_spi
         esp_lcd
         ili9340
+        freertos
 )

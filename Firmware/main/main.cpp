@@ -3,15 +3,30 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include "esp_random.h"
 #include "esp_log.h"
 
 #include "triac_controller.h"
-#include "display_manager.h"
 #include "LDR/LDR_sensor.h"
+
+#include "comm_manager.h"
+#include "lvgl_port.h"
+#include "ui_manager.h"
+
+#include "app_events.h"
+#include "app_modes.h"
+#include "event_bus.h"
 
 
 static const char *TAG = "LAMP_APP";
+
+/* Endereço do broker Mosquitto do backend na rede local. Ajuste para o
+ * host/porta reais do seu ambiente (ver Backend/docker-compose.yml). */
+static constexpr const char *MQTT_BROKER_URI = "mqtt://192.168.1.100:1883";
+
+/* Rede de emergência aberta pelo wifi_manager quando a reconexão à rede
+ * salva falha repetidamente, reabrindo o pareamento BLE de provisionamento. */
+static constexpr const char *WIFI_AP_FALLBACK_SSID = "SmartLight-Setup";
+static constexpr const char *WIFI_AP_FALLBACK_PASS = "smartlight123";
 
 static TriacController *triac_cntrl;
 static LDRSensor *ldr_sensor;
@@ -83,7 +98,22 @@ static void display_update_task( void *arg ) {
 
 extern "C" void app_main(void) {
     esp_err_t err;
-    
+
+    ESP_LOGI( TAG, "Inicializando ciclo de conectividade (BLE -> Wi-Fi -> MQTT)");
+    comm_manager_config_t comm_cfg = {};
+    comm_cfg.enable_ble = true;
+    comm_cfg.enable_mqtt = true;
+    comm_cfg.enable_http = false;
+    comm_cfg.mqtt_broker_uri = MQTT_BROKER_URI;
+    comm_cfg.wifi_ap_fallback_ssid = WIFI_AP_FALLBACK_SSID;
+    comm_cfg.wifi_ap_fallback_pass = WIFI_AP_FALLBACK_PASS;
+    err = comm_manager_init(&comm_cfg);
+    if (err != ESP_OK) {
+        ESP_LOGE( TAG, "Falha ao inicializar o comm_manager: %s", esp_err_to_name(err));
+    } else {
+        comm_manager_start();
+    }
+
     ESP_LOGI( TAG, "Inicializando sensor LDR");
     ldr_sensor = new LDRSensor();
     err = ldr_sensor->init(

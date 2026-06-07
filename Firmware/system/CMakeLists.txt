@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
-        "system_stub.cpp"
+        "event_bus.cpp"
+        "app_modes.cpp"
     INCLUDE_DIRS
         "."
     REQUIRES

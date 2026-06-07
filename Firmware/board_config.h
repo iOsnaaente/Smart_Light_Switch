@@ -38,6 +38,13 @@ static constexpr gpio_num_t PIN_NUM_GATE_TRIAC      = GPIO_NUM_10;
 static constexpr gpio_num_t PIN_NUM_SENSOR_RXD      = GPIO_NUM_21;
 static constexpr gpio_num_t PIN_NUM_SENSOR_TXD      = GPIO_NUM_20;
 
+// Botão de reset de provisionamento. Mantido pressionado (nível baixo, com
+// pull-up interno) durante o boot -> apaga credenciais Wi-Fi da NVS e reabre
+// o pareamento BLE. GPIO9 é o "BOOT button" na maioria das devkits ESP32-C3,
+// mas aqui já está ocupado por PIN_NUM_RST (display); usamos GPIO18 (livre
+// no restante do mapeamento) — ajuste conforme a fiação da sua placa.
+static constexpr gpio_num_t PIN_NUM_PROVISION_RESET = GPIO_NUM_18;
+
 
 // SPI - Bus Display TFT 
 static constexpr spi_host_device_t LCD_SPI_HOST     = SPI2_HOST;
@@ -49,9 +56,18 @@ static constexpr uint32_t TOUCH_SPI_CLOCK_HZ = 2 * 1000 * 1000;
 // SPI - Modelo Display TFT 
 static constexpr uint16_t TFT_MODEL = 0x9341;
 
-// SPI - Dimensões Display TFT   
-static constexpr int LCD_H_RES = 320;
-static constexpr int LCD_V_RES = 240;
+// SPI - Dimensões Display TFT (montagem física do painel é em retrato)
+static constexpr int LCD_WIDTH  = 240;
+static constexpr int LCD_HEIGHT = 320;
 static constexpr int CAL_MARGIN = 0;
 static constexpr int CAL_CROSS = 0;
+
+// Touch XPT2046 - faixa bruta de leitura do ADC (12 bits). Não existe rotina
+// de calibração implementada (campos _min_xp/_max_xp etc. de TFT_t ficam sem
+// uso); estes são valores de partida típicos — ajuste-os conforme o
+// comportamento observado no painel físico (ex.: trocar MIN<->MAX inverte o eixo).
+static constexpr int TOUCH_RAW_X_MIN = 200;
+static constexpr int TOUCH_RAW_X_MAX = 3900;
+static constexpr int TOUCH_RAW_Y_MIN = 200;
+static constexpr int TOUCH_RAW_Y_MAX = 3900;
 

@@ -7,5 +7,7 @@
         "${workspaceFolder}/build/config/sdkconfig.h"
     ],
     "C_Cpp.default.intelliSenseMode": "linux-gcc-x64",
-    "C_Cpp.default.configurationProvider": "espressif.esp-idf-extension"
+    "C_Cpp.default.configurationProvider": "espressif.esp-idf-extension",
+    "claudeCode.useTerminal": false,
+    "claudeCode.allowDangerouslySkipPermissions": true
 }

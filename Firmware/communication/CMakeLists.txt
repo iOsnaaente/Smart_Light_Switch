@@ -1,6 +1,21 @@
 idf_component_register(
     SRCS
-        "communication_stub.cpp"
+        "ble_setup.cpp"
+        "wifi_manager.cpp"
+        "mqtt_client.cpp"
+        "comm_manager.cpp"
     INCLUDE_DIRS
         "."
+    REQUIRES
+        system
+        bt
+        esp_wifi
+        esp_netif
+        esp_event
+        esp_timer
+        mqtt
+        json
+        nvs_flash
+        driver
+        freertos
 )

@@ -9,6 +9,7 @@ idf_component_register(
         controllers
         sensors
         ui
+        communication
         esp_driver_gpio
         esp_driver_spi
         esp_timer

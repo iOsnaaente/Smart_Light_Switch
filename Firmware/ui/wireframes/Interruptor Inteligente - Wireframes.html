@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Interruptor Inteligente — Wireframes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #eceef1;
+    background-image:
+      linear-gradient(rgba(20,30,50,.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(20,30,50,.04) 1px, transparent 1px);
+    background-size: 26px 26px;
+    font-family: 'Manrope', system-ui, sans-serif;
+    color: #23262b;
+    min-height: 100vh;
+  }
+  /* tokens das telas (cara de home assistant, neutros frios) */
+  #board {
+    --ink: #23262b;
+    --muted: #8a9099;
+    --paper: #f5f6f8;
+    --card: #ffffff;
+    --track: #eceef1;
+    --hair: #e2e5ea;
+    --natural: #ecd9a3;
+  }
+  .sec-title { font-family: 'Manrope', sans-serif; font-weight: 800; letter-spacing: -.01em; }
+  .wf-screen i { font-style: normal; }
+  ::-webkit-scrollbar { height: 10px; width: 10px; }
+  ::-webkit-scrollbar-thumb { background: #cdd2d8; border-radius: 5px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="wireframe-screens.jsx"></script>
+
+<script type="text/babel">
+const { useState } = React;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accent": "#9B7BD4",
+  "control": "Botões",
+  "density": "Compacto",
+  "corners": "Arredondado",
+  "icons": true,
+  "lang": "PT"
+}/*EDITMODE-END*/;
+
+const CONTROL_MAP = { "Dial": "dial", "Barra": "slider", "Botões": "stepper" };
+const DENSITY_MAP = { "Compacto": 0.9, "Normal": 1, "Grande": 1.12 };
+
+function NoteCard({ children }) {
+  return (
+    <div style={{
+      alignSelf: "center", width: 188, background: "#fff", boxShadow: "0 2px 10px rgba(20,30,50,.06)",
+      border: "1px solid #e2e5ea", borderRadius: 12, padding: "13px 15px",
+      fontFamily: "'Manrope', sans-serif", fontSize: 13.5, lineHeight: 1.4, color: "#5b616b"
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
+        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--accent)" }} />
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "#9aa0a8" }}>nota</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Section({ title, note, children }) {
+  return (
+    <section style={{ marginTop: 46 }}>
+      <div style={{ marginBottom: 6 }}>
+        <h2 className="sec-title" style={{ margin: 0, fontSize: 27, color: "#23262b" }}>{title}</h2>
+        {note && <div style={{ fontSize: 15, color: "#8a9099", fontWeight: 500, marginTop: 3 }}>{note}</div>}
+      </div>
+      <div style={{ height: 1, background: "#dfe3e8", margin: "12px 0 28px" }} />
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 36, alignItems: "flex-start" }}>
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function App() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const lang = t.lang === "EN" ? "en" : "pt";
+  const control = CONTROL_MAP[t.control] || "dial";
+  const icons = !!t.icons;
+
+  const boardVars = {
+    "--accent": t.accent,
+    "--r": t.corners === "Reto" ? "3px" : "14px",
+    "--ui": DENSITY_MAP[t.density] || 1
+  };
+
+  const L = (pt, en) => (lang === "pt" ? pt : en);
+
+  return (
+    <div id="board" style={{ ...boardVars, padding: "46px 56px 120px", maxWidth: 1600, margin: "0 auto" }}>
+      {/* Cabeçalho */}
+      <header>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ width: 16, height: 16, borderRadius: 4, background: t.accent }} />
+          <span style={{ fontSize: 15, color: "#8a9099", fontWeight: 600, letterSpacing: ".02em", whiteSpace: "nowrap" }}>ESP32-C3 · TFT 240×320 ({L("retrato", "portrait")}) · {L("toque com o dedo", "finger touch")}</span>
+        </div>
+        <h1 className="sec-title" style={{ margin: "8px 0 4px", fontSize: 40, lineHeight: 1 }}>
+          {L("Interruptor Inteligente", "Smart Light Switch")}
+        </h1>
+        <p style={{ margin: 0, fontSize: 15, color: "#8a9099", maxWidth: 640, fontWeight: 500, lineHeight: 1.5 }}>
+          {L("Wireframes de operação — controle de intensidade com compensação de luz natural. Use o painel de Tweaks para explorar cor, controle e densidade.",
+             "Operation wireframes — brightness control with natural-light compensation. Use the Tweaks panel to explore color, control and density.")}
+        </p>
+      </header>
+
+      {/* Tela principal */}
+      <Section title={L("Tela Principal", "Main Screen")} note={L("3 abordagens — o modo automático é o protagonista", "3 approaches — auto mode is the hero")}>
+        <Device tag="A" label={L("Dial central", "Center dial")}><MainA lang={lang} icons={icons} control={control} /></Device>
+        <Device tag="B" label={L("Sol vs Lâmpada", "Sun vs Lamp")}><MainB lang={lang} icons={icons} /></Device>
+        <NoteCard>{L("A barra mostra a lâmpada completando a luz natural até o alvo em lux.", "The bar shows the lamp topping up natural light to the lux target.")}</NoteCard>
+        <Device tag="C" label={L("Dashboard cards", "Card dashboard")}><MainC lang={lang} icons={icons} control={control} /></Device>
+      </Section>
+
+      {/* Modo automático + Config */}
+      <Section title={L("Modo Automático & Ajustes", "Auto Mode & Settings")} note={L("setpoint (alvo), sensibilidade e ajustes do dispositivo", "setpoint, sensitivity and device settings")}>
+        <Device label={L("Modo Automático", "Auto Mode")}><AutoScreen lang={lang} icons={icons} /></Device>
+        <NoteCard>{L("As setas SP ajustam o alvo em lux; a sensibilidade define quão rápido a lâmpada reage.", "SP arrows set the lux target; sensitivity tunes how fast the lamp reacts.")}</NoteCard>
+        <Device label={L("Ajustes", "Settings")}><SettingsScreen lang={lang} icons={icons} /></Device>
+        <NoteCard>{L("Toggle PT / EN fica na primeira linha de Ajustes.", "PT / EN toggle lives in the first Settings row.")}</NoteCard>
+      </Section>
+
+      {/* Painel de Tweaks */}
+      <TweaksPanel title="Tweaks">
+        <TweakSection label={L("Aparência", "Appearance")} />
+        <TweakColor label={L("Cor de destaque", "Accent color")} value={t.accent}
+          options={["#E0975B", "#3DA5C9", "#4FB477", "#9B7BD4"]}
+          onChange={(v) => setTweak("accent", v)} />
+        <TweakRadio label={L("Cantos", "Corners")} value={t.corners}
+          options={["Arredondado", "Reto"]}
+          onChange={(v) => setTweak("corners", v)} />
+        <TweakToggle label={L("Mostrar ícones", "Show icons")} value={t.icons}
+          onChange={(v) => setTweak("icons", v)} />
+
+        <TweakSection label={L("Controle & Densidade", "Control & Density")} />
+        <TweakRadio label={L("Controle de intensidade", "Intensity control")} value={t.control}
+          options={["Dial", "Barra", "Botões"]}
+          onChange={(v) => setTweak("control", v)} />
+        <TweakRadio label={L("Densidade", "Density")} value={t.density}
+          options={["Compacto", "Normal", "Grande"]}
+          onChange={(v) => setTweak("density", v)} />
+
+        <TweakSection label={L("Idioma", "Language")} />
+        <TweakRadio label={L("Idioma das telas", "Screen language")} value={t.lang}
+          options={["PT", "EN"]}
+          onChange={(v) => setTweak("lang", v)} />
+      </TweaksPanel>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
