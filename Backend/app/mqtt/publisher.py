@@ -20,8 +20,7 @@ def disconnect():
     _client.disconnect()
 
 
-def publish_command(device_id: str, relay: bool) -> bool:
-    topic = f"devices/{device_id}/command"
-    payload = json.dumps({"relay": relay})
-    result = _client.publish(topic, payload, qos=1)
+def publish_command(user_id: int, device_id: str, payload: dict) -> bool:
+    topic = f"devices/{user_id}/{device_id}/command"
+    result = _client.publish(topic, json.dumps(payload), qos=1)
     return result.rc == mqtt.MQTT_ERR_SUCCESS

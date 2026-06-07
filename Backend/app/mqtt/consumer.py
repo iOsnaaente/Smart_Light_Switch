@@ -10,12 +10,13 @@ from app.services import device_service
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mqtt-consumer")
 
-STATE_TOPIC = "devices/+/state"
-TELEMETRY_TOPIC = "devices/+/telemetry"
+STATE_TOPIC = "devices/+/+/state"
+TELEMETRY_TOPIC = "devices/+/+/telemetry"
 
 
-def _extract_device_id(topic: str) -> str:
-    return topic.split("/")[1]
+def _extract_ids(topic: str) -> tuple[int, str]:
+    _, user_id, device_id, _ = topic.split("/")
+    return int(user_id), device_id
 
 
 def _on_connect(client, userdata, flags, reason_code, properties=None):
@@ -25,7 +26,7 @@ def _on_connect(client, userdata, flags, reason_code, properties=None):
 
 def _on_message(client, userdata, msg: mqtt.MQTTMessage):
     try:
-        device_id = _extract_device_id(msg.topic)
+        user_id, device_id = _extract_ids(msg.topic)
         payload = json.loads(msg.payload.decode("utf-8"))
     except (IndexError, ValueError, UnicodeDecodeError) as exc:
         logger.warning("Ignoring invalid message on %s: %s", msg.topic, exc)
@@ -35,18 +36,39 @@ def _on_message(client, userdata, msg: mqtt.MQTTMessage):
     try:
         if msg.topic.endswith("/state"):
             relay = bool(payload.get("relay"))
-            device_service.upsert_state(db, device_id, relay)
-            logger.info("Updated state for %s: relay=%s", device_id, relay)
+            device_service.upsert_state(
+                db,
+                user_id,
+                device_id,
+                relay,
+                automatic_mode=payload.get("automatic_mode"),
+                dimmer=payload.get("dimmer"),
+                rssi=payload.get("rssi"),
+            )
+            if "firmware" in payload or "wifi_name" in payload:
+                device_service.update_reported_info(
+                    db,
+                    user_id,
+                    device_id,
+                    firmware=payload.get("firmware"),
+                    wifi_name=payload.get("wifi_name"),
+                )
+            logger.info("Updated state for user %s device %s: relay=%s", user_id, device_id, relay)
         elif msg.topic.endswith("/telemetry"):
             device_service.insert_telemetry(
                 db,
+                user_id,
                 device_id,
                 sp=payload.get("sp"),
                 mv=payload.get("mv"),
                 current=payload.get("current"),
                 power=payload.get("power"),
+                lux=payload.get("lux"),
+                natural_lux=payload.get("natural_lux"),
+                dimmer=payload.get("dimmer"),
+                kwh_today=payload.get("kwh_today"),
             )
-            logger.info("Inserted telemetry for %s", device_id)
+            logger.info("Inserted telemetry for user %s device %s", user_id, device_id)
     finally:
         db.close()
 

@@ -2,7 +2,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from app.core.config import settings
+from app.db.session import SessionLocal
+from app.services import user_service
 
 PUBLIC_PATHS = {"/login", "/docs", "/openapi.json", "/redoc"}
 
@@ -15,7 +16,19 @@ class SimpleAuthMiddleware(BaseHTTPMiddleware):
         username = request.headers.get("X-Username")
         password = request.headers.get("X-Password")
 
-        if username != settings.auth_username or password != settings.auth_password:
+        if username is None or password is None:
             return JSONResponse(status_code=401, content={"detail": "Invalid credentials"})
+
+        db = SessionLocal()
+        try:
+            user = user_service.authenticate(db, username, password)
+        finally:
+            db.close()
+
+        if user is None:
+            return JSONResponse(status_code=401, content={"detail": "Invalid credentials"})
+
+        request.state.user_id = user.id
+        request.state.username = user.username
 
         return await call_next(request)

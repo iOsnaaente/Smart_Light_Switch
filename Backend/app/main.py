@@ -4,13 +4,22 @@ from fastapi import FastAPI
 
 from app.api import auth, devices
 from app.core.auth import SimpleAuthMiddleware
-from app.db.session import Base, engine
+from app.core.config import settings
+from app.db.session import Base, SessionLocal, engine
 from app.mqtt import publisher
+from app.services import user_service
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+
+    db = SessionLocal()
+    try:
+        user_service.ensure_default_user(db, settings.auth_username, settings.auth_password)
+    finally:
+        db.close()
+
     publisher.connect()
     yield
     publisher.disconnect()

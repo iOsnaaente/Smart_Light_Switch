@@ -8,3 +8,4 @@ class LoginRequest(BaseModel):
 
 class LoginResponse(BaseModel):
     success: bool
+    user_id: int | None = None
