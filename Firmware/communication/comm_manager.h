@@ -15,6 +15,12 @@ typedef struct {
     /* URI do broker MQTT (ex.: "mqtt://192.168.1.10:1883"). Ignorado se enable_mqtt = false. */
     const char *mqtt_broker_uri;
 
+    /* Credenciais do broker MQTT (NULL/"" = broker sem autenticação,
+     * ex.: allow_anonymous true no mosquitto.conf). Quando preenchidas,
+     * são repassadas ao mqtt_client via mqtt_client_config_t. */
+    const char *mqtt_username;
+    const char *mqtt_password;
+
     /* SSID/senha do AP de emergência usado pelo wifi_manager caso a
      * reconexão à rede salva falhe repetidamente. */
     const char *wifi_ap_fallback_ssid;

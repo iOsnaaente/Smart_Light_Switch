@@ -19,34 +19,28 @@
 
 static const char *TAG = "LAMP_APP";
 
-/* Endereço do broker Mosquitto do backend na rede local.
- *
- * PRECISA ser ajustado antes de gravar o firmware: aponte para o IP da
- * máquina onde o Backend roda (`docker compose up` em /Backend expõe o
- * Mosquitto na porta 1883 — ver Backend/docker-compose.yml, serviço
- * "mosquitto"). Para descobrir o IP dessa máquina na sua rede local, use
- * `ip addr` / `hostname -I` (Linux/macOS) ou `ipconfig` (Windows) e procure
- * o endereço da interface conectada ao mesmo roteador/AP do dispositivo —
- * o ESP32 e o Backend precisam estar na mesma rede. */
-static constexpr const char *MQTT_BROKER_URI = "mqtt://192.168.1.100:1883";
-
-/* Rede de emergência aberta pelo wifi_manager quando a reconexão à rede
- * salva falha repetidamente, reabrindo o pareamento BLE de provisionamento. */
-static constexpr const char *WIFI_AP_FALLBACK_SSID = "SmartLight-Setup";
-static constexpr const char *WIFI_AP_FALLBACK_PASS = "smartlight123";
-
 static TriacController *triac_cntrl;
 static LDRSensor *ldr_sensor;
 
 
-static void on_dimmer_command(void *handler_arg, esp_event_base_t base, int32_t id, void *event_data) {
+static void on_dimmer_command(
+    void *handler_arg, 
+    esp_event_base_t base, 
+    int32_t id, 
+    void *event_data
+) {
     event_dimmer_command_t *evt = (event_dimmer_command_t *)event_data;
     if (triac_cntrl != nullptr) {
         triac_cntrl->set_setpoint(evt->value / 100.0f);
     }
 }
 
-static void on_relay_command(void *handler_arg, esp_event_base_t base, int32_t id, void *event_data) {
+static void on_relay_command(
+    void *handler_arg, 
+    esp_event_base_t base, 
+    int32_t id, 
+    void *event_data
+) {
     event_relay_command_t *evt = (event_relay_command_t *)event_data;
     if (triac_cntrl != nullptr) {
         triac_cntrl->set_setpoint(evt->relay_on ? 1.0f : 0.0f);
@@ -63,23 +57,40 @@ static void lamp_control_task( void *arg ) {
             /* Lê o sensor LDR */
             esp_err_t err = ldr_sensor->read_normalized( &normalized );
             if (err != ESP_OK) {
-                ESP_LOGE( TAG, "Erro ao ler valor normalizado do LDR: %s", esp_err_to_name(err) );
+                ESP_LOGE( 
+                    TAG, 
+                    "Erro ao ler valor normalizado do LDR: %s", 
+                    esp_err_to_name(err) 
+                );
                 triac_cntrl->status = LAMP_STATUS_ERROR;
                 vTaskDelay(pdMS_TO_TICKS(100));
                 continue;
             }
             ldr_sensor->read_voltage( &voltage );
 
-            /* Publica a leitura crua do LDR — quem decide o que ela significa
-             * (telas, MQTT) assina LDR_UPDATE; o guardrail abaixo só "achata"
-             * os extremos para fins de controle. */
-            event_ldr_update_t ldr_evt = { .normalized = normalized, .voltage = voltage };
-            event_bus_post(SMART_SWITCH_EVENT_LDR_UPDATE, &ldr_evt, sizeof(ldr_evt), pdMS_TO_TICKS(100));
+            /** 
+             * @brief   Publica a leitura crua do LDR.
+             * @details Quem decide o que ela significa (telas, MQTT) assina 
+             *          LDR_UPDATE; o guardrail abaixo só "achata" os 
+             *          extremos para fins de controle. 
+             */
+            event_ldr_update_t ldr_evt = {}; 
+            ldr_evt.normalized = normalized, 
+            ldr_evt.voltage = voltage;
+            event_bus_post(
+                SMART_SWITCH_EVENT_LDR_UPDATE, 
+                &ldr_evt, sizeof(ldr_evt), 
+                pdMS_TO_TICKS(100)
+            );
 
-            /* O ajuste automático por LDR só faz sentido no modo Automático —
-             * no Manual, quem decide o setpoint são os comandos vindos da UI/
-             * MQTT/BLE (DIMMER_COMMAND/RELAY_COMMAND, tratados em
-             * on_dimmer_command/on_relay_command, acima). */
+            /**
+             * @details O ajuste automático por LDR só faz sentido no modo 
+             *          Automático - no Manual, quem decide o setpoint são 
+             *          os comandos vindos da UI/MQTT/BLE 
+             *              - DIMMER_COMMAND / RELAY_COMMAND 
+             *          tratados em on_dimmer_command / on_relay_command, 
+             *          logo acima. 
+             */
             if ( app_modes_get() == APP_MODE_AUTOMATIC ) {
                 /* Faz o guardrail do valor normalizado */
                 if ( normalized < 0.05f ) {
@@ -98,14 +109,23 @@ static void lamp_control_task( void *arg ) {
                 triac_cntrl->set_setpoint( normalized );
             }
 
-            /* Publica o estado atual do dimmer — espelha o setpoint realmente
-             * armado no triac agora (decidido pelo automático ou por um
-             * comando manual), para telas/MQTT ecoarem o valor de verdade.
-             * delay_us não tem um equivalente público exato no controlador
-             * (o atraso de disparo é interno); usamos last_half_cycle_us —
-             * a telemetria de tempo mais próxima e honesta disponível. */
-            event_dimmer_update_t dimmer_evt = { .duty = triac_cntrl->setpoint, .delay_us = triac_cntrl->last_half_cycle_us };
-            event_bus_post(SMART_SWITCH_EVENT_DIMMER_UPDATE, &dimmer_evt, sizeof(dimmer_evt), pdMS_TO_TICKS(100));
+            /** 
+             * @brief   Publica o estado atual do dimmer — espelha o setpoint realmente
+             * @details armado no triac agora (decidido pelo automático ou por um
+             *          comando manual), para telas/MQTT ecoarem o valor de verdade.
+             * @note    delay_us não tem um equivalente público exato no controlador
+             *          (o atraso de disparo é interno); usamos last_half_cycle_us —
+             *          a telemetria de tempo mais próxima e honesta disponível. 
+             */
+            event_dimmer_update_t dimmer_evt = {};
+            dimmer_evt.duty = triac_cntrl->setpoint;
+            dimmer_evt.delay_us = triac_cntrl->last_half_cycle_us;
+            event_bus_post(
+                SMART_SWITCH_EVENT_DIMMER_UPDATE, 
+                &dimmer_evt, 
+                sizeof(dimmer_evt), 
+                pdMS_TO_TICKS(100)
+            );
 
             /* Debug */
             if ( (counter++) % 25 == 0 ) {
@@ -136,6 +156,8 @@ extern "C" void app_main(void) {
     comm_cfg.enable_mqtt = true;
     comm_cfg.enable_http = false;
     comm_cfg.mqtt_broker_uri = MQTT_BROKER_URI;
+    comm_cfg.mqtt_username = MQTT_USERNAME;
+    comm_cfg.mqtt_password = MQTT_PASSWORD;
     comm_cfg.wifi_ap_fallback_ssid = WIFI_AP_FALLBACK_SSID;
     comm_cfg.wifi_ap_fallback_pass = WIFI_AP_FALLBACK_PASS;
     err = comm_manager_init(&comm_cfg);

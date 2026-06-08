@@ -22,19 +22,19 @@ O projeto tem três partes que conversam entre si por um contrato comum
 │   Firmware    │ ◄─────────────────► │  Mosquitto Broker │ ◄──────────────────► │   MQTT Consumer  │
 │  (ESP32-C3)   │  devices/{u}/{d}/…  │  (Backend/Docker) │  state · telemetry   │ (Backend/Docker) │
 │ sensores, relé│                     └─────────┬─────────┘                      └─────────┬────────┘
-│ dimmer, LCD   │                                │ command (publica)                        │ grava
-└───────────────┘                                │                                          ▼
-                                          ┌───────┴────────┐                        ┌──────────────┐
-                                          │   FastAPI      │ ◄───────────────────── │  PostgreSQL  │
-                                          │   (Backend)    │   lê estado/telemetria │  (Backend)   │
-                                          └───────┬────────┘                        └──────────────┘
-                                                  │ HTTP REST (X-Username / X-Password)
-                                                  ▼
-                                          ┌────────────────┐
-                                          │   App Flutter  │
-                                          │  (Android/iOS/ │
-                                          │  Web/Desktop)  │
-                                          └────────────────┘
+│ dimmer, LCD   │                               │ command (publica)                        │ grava
+└───────────────┘                               │                                          ▼
+                                        ┌───────┴────────┐                        ┌──────────────┐
+                                        │   FastAPI      │ ◄───────────────────── │  PostgreSQL  │
+                                        │   (Backend)    │   lê estado/telemetria │  (Backend)   │
+                                        └───────┬────────┘                        └──────────────┘
+                                                │ HTTP REST (X-Username / X-Password)
+                                                ▼
+                                        ┌────────────────┐
+                                        │   App Flutter  │
+                                        │  (Android/iOS/ │
+                                        │  Web/Desktop)  │
+                                        └────────────────┘
 ```
 
 - O **App nunca fala MQTT diretamente** — todo comando (ligar relé, mudar

@@ -118,3 +118,14 @@ mosquitto_pub -h localhost -t devices/1/switch01/state \
 mosquitto_pub -h localhost -t devices/1/switch01/telemetry \
   -m '{"sp": 220.1, "mv": 219.8, "current": 0.55, "power": 121.0, "lux": 410.5, "natural_lux": 180.2, "dimmer": 70, "kwh_today": 0.532}'
 ```
+
+> **Broker com senha:** se o Mosquitto exigir autenticação
+> (`allow_anonymous false`), acrescente `-u <usuário> -P <senha>` manualmente
+> em cada `mosquitto_pub`/`mosquitto_sub` — as mesmas credenciais configuradas
+> em `MQTT_USERNAME`/`MQTT_PASSWORD` (ver `Backend/.env.example` e
+> `Firmware/main/main.cpp`):
+>
+> ```bash
+> mosquitto_pub -h localhost -u smart-light-device -P troque-esta-senha \
+>   -t devices/1/switch01/state -m '{"relay": true, "dimmer": 70}'
+> ```

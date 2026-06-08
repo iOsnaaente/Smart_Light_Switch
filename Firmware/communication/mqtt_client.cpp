@@ -323,6 +323,12 @@ esp_err_t mqtt_client_start(void) {
     mqtt_cfg.session.keepalive = 60;
     mqtt_cfg.network.reconnect_timeout_ms = 5000;
 
+    if (s_config.mqtt_username != nullptr && s_config.mqtt_username[0] != '\0') {
+        mqtt_cfg.credentials.username = s_config.mqtt_username;
+        mqtt_cfg.credentials.authentication.password = s_config.mqtt_password;
+        ESP_LOGI(TAG, "Autenticação MQTT habilitada (usuário=%s)", s_config.mqtt_username);
+    }
+
     s_client = esp_mqtt_client_init(&mqtt_cfg);
     if (s_client == nullptr) {
         ESP_LOGE(TAG, "Falha ao criar cliente MQTT");

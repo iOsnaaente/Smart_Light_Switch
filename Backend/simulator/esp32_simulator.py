@@ -10,9 +10,16 @@ Uso:
 
 Exemplo:
     python esp32_simulator.py 1 switch01
+
+Se o broker exigir autenticação (allow_anonymous false + password_file),
+defina as variáveis de ambiente MQTT_USERNAME/MQTT_PASSWORD antes de rodar:
+
+    MQTT_USERNAME=smart-light-device MQTT_PASSWORD=troque-esta-senha \\
+        python esp32_simulator.py 1 switch01
 """
 
 import json
+import os
 import random
 import sys
 import threading
@@ -22,6 +29,8 @@ import paho.mqtt.client as mqtt
 
 MQTT_HOST = "localhost"
 MQTT_PORT = 1883
+MQTT_USERNAME = os.environ.get("MQTT_USERNAME") or None
+MQTT_PASSWORD = os.environ.get("MQTT_PASSWORD") or None
 TELEMETRY_INTERVAL_SECONDS = 5
 
 user_id = sys.argv[1] if len(sys.argv) > 1 else "1"
@@ -119,6 +128,8 @@ def telemetry_loop(client: mqtt.Client) -> None:
 
 def main():
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"esp32-sim-{user_id}-{device_id}")
+    if MQTT_USERNAME:
+        client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
     client.on_connect = on_connect
     client.on_message = on_message
 

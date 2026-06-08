@@ -22,6 +22,8 @@ extern "C" {
 
 typedef struct {
     const char *broker_uri;            /* ex.: "mqtt://192.168.1.10:1883"            */
+    const char *mqtt_username;         /* usuário do broker (NULL/"" = sem autenticação) */
+    const char *mqtt_password;         /* senha correspondente a mqtt_username           */
     uint32_t state_heartbeat_ms;       /* intervalo do heartbeat de estado (ex. 30s) */
     uint32_t telemetry_interval_ms;    /* intervalo de telemetria (ex. 5-10s)        */
 } mqtt_client_config_t;

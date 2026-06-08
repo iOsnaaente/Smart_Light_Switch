@@ -190,6 +190,22 @@ Para escutar comandos publicados pela API:
 mosquitto_sub -h localhost -t 'devices/+/+/command' -v
 ```
 
+> **Broker com autenticação:** se o `mosquitto.conf` tiver
+> `allow_anonymous false` + `password_file` (criado com `mosquitto_passwd`),
+> todo cliente precisa se autenticar — inclusive `mosquitto_pub`/
+> `mosquitto_sub` na linha de comando. Adicione manualmente as flags
+> `-u <usuário> -P <senha>` (mesmas credenciais configuradas em
+> `MQTT_USERNAME`/`MQTT_PASSWORD` no `.env` e em `MQTT_USERNAME`/
+> `MQTT_PASSWORD` no firmware — ver `Firmware/main/main.cpp`):
+>
+> ```bash
+> mosquitto_pub -h localhost -u smart-light-device -P troque-esta-senha \
+>   -t devices/1/switch01/state -m '{"relay": true}'
+>
+> mosquitto_sub -h localhost -u smart-light-device -P troque-esta-senha \
+>   -t 'devices/+/+/command' -v
+> ```
+
 ## Estrutura de diretórios
 
 ```
@@ -372,6 +388,10 @@ broker:
 ```bash
 docker compose exec mosquitto mosquitto_sub -h localhost -t 'devices/#' -v
 ```
+
+Se o broker exigir autenticação, acrescente `-u <usuário> -P <senha>`
+manualmente ao comando acima (mesmas credenciais de `MQTT_USERNAME`/
+`MQTT_PASSWORD`).
 
 ## 5. Encerrar tudo
 

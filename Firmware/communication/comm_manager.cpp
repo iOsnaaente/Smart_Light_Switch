@@ -158,6 +158,8 @@ esp_err_t comm_manager_init(const comm_manager_config_t *config) {
         } else {
             mqtt_client_config_t mqtt_cfg = {};
             mqtt_cfg.broker_uri = s_config.mqtt_broker_uri;
+            mqtt_cfg.mqtt_username = s_config.mqtt_username;
+            mqtt_cfg.mqtt_password = s_config.mqtt_password;
             mqtt_cfg.state_heartbeat_ms = 30000;
             mqtt_cfg.telemetry_interval_ms = 7000;
             err = mqtt_client_init(&mqtt_cfg);
