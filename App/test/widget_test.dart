@@ -6,18 +6,21 @@ import 'package:smart_light_switch/main.dart';
 
 void main() {
   testWidgets('Login screen shows username and password fields', (WidgetTester tester) async {
-    await tester.pumpWidget(SmartLightSwitchApp(apiClient: ApiClient()));
+    await tester.pumpWidget(SmartLightApp(apiClient: _RejectingApiClient()));
+    await tester.pumpAndSettle();
 
-    expect(find.text('Smart Light Switch'), findsOneWidget);
-    expect(find.widgetWithText(TextFormField, 'Usuário'), findsOneWidget);
-    expect(find.widgetWithText(TextFormField, 'Senha'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Entrar'), findsOneWidget);
+    expect(find.text('SmartLight'), findsOneWidget);
+    expect(find.text('USUÁRIO'), findsOneWidget);
+    expect(find.text('SENHA'), findsOneWidget);
+    expect(find.byType(TextField), findsNWidgets(2));
+    expect(find.widgetWithText(ElevatedButton, 'Entrar'), findsOneWidget);
   });
 
   testWidgets('Login button shows error when credentials are rejected', (WidgetTester tester) async {
-    await tester.pumpWidget(SmartLightSwitchApp(apiClient: _RejectingApiClient()));
+    await tester.pumpWidget(SmartLightApp(apiClient: _RejectingApiClient()));
+    await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Entrar'));
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Entrar'));
     await tester.pumpAndSettle();
 
     expect(find.text('Usuário ou senha inválidos'), findsOneWidget);

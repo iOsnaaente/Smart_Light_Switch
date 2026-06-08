@@ -1,12 +1,56 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/routes/app_routes.dart';
 import '../../core/theme/app_theme.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/device_provider.dart';
 
-class LoginPage extends StatelessWidget {
+class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
-  void _enterAsDemo(BuildContext context) {
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final _usernameController = TextEditingController(text: 'admin');
+  final _passwordController = TextEditingController(text: 'admin');
+  bool _submitting = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _enter() async {
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+
+    final auth = context.read<AuthProvider>();
+    final ok = await auth.login(_usernameController.text.trim(), _passwordController.text);
+    if (!mounted) return;
+
+    if (ok) {
+      await context.read<DeviceProvider>().loadDevices();
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, AppRoutes.devices);
+    } else {
+      setState(() {
+        _submitting = false;
+        _error = auth.error ?? 'Não foi possível entrar';
+      });
+    }
+  }
+
+  void _enterAsDemo() {
+    context.read<AuthProvider>().enterDemoMode();
+    context.read<DeviceProvider>().enableDemoMode();
     Navigator.pushReplacementNamed(context, AppRoutes.devices);
   }
 
@@ -31,39 +75,50 @@ class LoginPage extends StatelessWidget {
                     style: TextStyle(fontSize: 13.5, color: AppColors.ink2, fontWeight: FontWeight.w500),
                   ),
                   const SizedBox(height: 30),
-                  const _LoginField(label: 'E-MAIL', placeholder: 'voce@email.com'),
+                  _LoginField(label: 'USUÁRIO', placeholder: 'admin', controller: _usernameController),
                   const SizedBox(height: 14),
-                  const _LoginField(label: 'SENHA', placeholder: '••••••••', obscure: true),
+                  _LoginField(label: 'SENHA', placeholder: '••••••••', obscure: true, controller: _passwordController),
                   const SizedBox(height: 8),
-                  Align(
+                  const Align(
                     alignment: Alignment.centerRight,
                     child: Text('esqueci a senha', style: TextStyle(fontSize: 13, color: AppColors.accentInk, fontWeight: FontWeight.w600)),
                   ),
-                  const SizedBox(height: 26),
+                  if (_error != null) ...[
+                    const SizedBox(height: 14),
+                    Text(_error!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: AppColors.danger, fontWeight: FontWeight.w600)),
+                  ],
+                  const SizedBox(height: 22),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () => _enterAsDemo(context),
-                      child: const Text('Entrar'),
+                      onPressed: _submitting ? null : _enter,
+                      child: _submitting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
+                            )
+                          : const Text('Entrar'),
                     ),
                   ),
                   const SizedBox(height: 10),
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton(
-                      onPressed: () => _enterAsDemo(context),
+                      onPressed: _submitting ? null : _enterAsDemo,
                       child: const Text('Entrar como demonstração'),
                     ),
                   ),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 18),
                   Text.rich(
                     TextSpan(
-                      style: const TextStyle(fontSize: 13.5, color: AppColors.ink2, fontWeight: FontWeight.w500),
+                      style: const TextStyle(fontSize: 12.5, color: AppColors.ink2, fontWeight: FontWeight.w500),
                       children: [
-                        const TextSpan(text: 'novo aqui? '),
-                        TextSpan(text: 'criar conta', style: TextStyle(color: AppColors.accentInk, fontWeight: FontWeight.w700)),
+                        const TextSpan(text: 'usuário de teste do Backend: '),
+                        TextSpan(text: 'admin / admin', style: TextStyle(color: AppColors.accentInk, fontWeight: FontWeight.w700)),
                       ],
                     ),
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ),
@@ -130,8 +185,9 @@ class _LoginField extends StatelessWidget {
   final String label;
   final String placeholder;
   final bool obscure;
+  final TextEditingController controller;
 
-  const _LoginField({required this.label, required this.placeholder, this.obscure = false});
+  const _LoginField({required this.label, required this.placeholder, required this.controller, this.obscure = false});
 
   @override
   Widget build(BuildContext context) {
@@ -141,6 +197,7 @@ class _LoginField extends StatelessWidget {
         Text(label, style: labelStyle(fontSize: 12)),
         const SizedBox(height: 7),
         TextField(
+          controller: controller,
           obscureText: obscure,
           decoration: InputDecoration(hintText: placeholder),
         ),

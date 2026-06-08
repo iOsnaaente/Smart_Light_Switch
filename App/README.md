@@ -1,19 +1,36 @@
-# Smart Light Switch — App (MVP)
+# Smart Light Switch — App
 
-App Flutter (MVP) para controlar o interruptor inteligente via o backend
-FastAPI/MQTT em `../Backend`. Permite login, visualizar o estado do relé
-(ligado/desligado), alternar o relé e acompanhar a telemetria mais recente
-(tensão, corrente, potência) do dispositivo `switch01`.
+App Flutter que controla os interruptores inteligentes via o backend
+FastAPI/MQTT em `../Backend`. Permite login, listar os dispositivos do
+usuário, ligar/desligar o relé, alternar entre modo manual e automático,
+ajustar dimmer/setpoint/limites, calibrar o sensor de luz, renomear ou
+remover dispositivos e acompanhar a telemetria (lux, luz natural, potência,
+consumo). Também inclui um **modo de demonstração** 100% offline (dados em
+memória) para apresentar o app sem depender do backend.
 
 ## Estrutura
 
 ```
 lib/
-├── api/api_client.dart        # Cliente HTTP para o backend (login, estado, telemetria, relé)
-├── models/device_models.dart  # Modelos DeviceState e Telemetry
-├── screens/login_screen.dart  # Tela de login
-├── screens/dashboard_screen.dart # Painel do dispositivo (relé + telemetria)
-└── main.dart                  # Entry point / MaterialApp
+├── api/api_client.dart            # Cliente HTTP para o backend (login, devices, estado,
+│                                  # telemetria, relé, modo, dimmer, setpoint, agendamentos...)
+├── providers/
+│   ├── auth_provider.dart         # Sessão (login real / modo demo) — ChangeNotifier
+│   └── device_provider.dart       # Lista de dispositivos + comandos — ChangeNotifier
+├── models/
+│   ├── device.dart                # Modelo Device (fromJson/copyWith) usado pela UI
+│   ├── device_models.dart         # DTOs da API: Telemetry, TelemetryPoint, Schedule
+│   └── mock_devices.dart          # Dados em memória que alimentam o modo de demonstração
+├── screens/
+│   ├── login/login_page.dart            # Login (real ou demonstração)
+│   ├── dashboard/devices_page.dart      # Lista de dispositivos por ambiente
+│   ├── control/control_page.dart        # Controle do dispositivo (relé, modo, dimmer, lux)
+│   └── settings/device_settings_page.dart # Setpoint, limites, calibração, renomear, remover
+├── widgets/                        # Componentes visuais reutilizáveis (gauges, chips, cards...)
+├── core/
+│   ├── routes/app_routes.dart      # Rotas nomeadas (login, devices, control, settings)
+│   └── theme/app_theme.dart        # Tema Material 3
+└── main.dart                       # Entry point / MultiProvider / MaterialApp
 ```
 
 ## Pré-requisitos
@@ -78,13 +95,26 @@ usuário: admin
 senha:   admin
 ```
 
+## Modo de demonstração (sem backend)
+
+Na tela de login, toque em **"Entrar como demonstração"** para navegar pelo
+app inteiro com dados em memória (`lib/models/mock_devices.dart`) — útil para
+apresentações quando o backend não está disponível. Nesse modo os comandos
+(relé, modo, dimmer, setpoint...) só atualizam o estado local; nada é enviado
+à rede.
+
 ## Simulando o dispositivo (sem hardware)
 
-Para gerar dados de estado/telemetria que o app exibirá, publique no broker
-MQTT (veja `../Backend/README.md`):
+Com o backend no ar, use o simulador Python descrito em
+`../Backend/README.md` (`Backend/simulator/esp32_simulator.py`) — ele
+conversa com a API/MQTT como um ESP32 real e mantém o app sempre com dados
+atualizados. Se preferir publicar manualmente, lembre-se de que os tópicos
+incluem o `user_id` (`devices/{user_id}/{device_id}/...`; o usuário `admin`
+padrão tem `user_id = 1`):
 
 ```bash
-mosquitto_pub -h localhost -t devices/switch01/state -m '{"relay": true}'
-mosquitto_pub -h localhost -t devices/switch01/telemetry \
-  -m '{"sp": 220.1, "mv": 219.8, "current": 0.55, "power": 121.0}'
+mosquitto_pub -h localhost -t devices/1/switch01/state \
+  -m '{"relay": true, "automatic_mode": false, "dimmer": 70, "rssi": -55}'
+mosquitto_pub -h localhost -t devices/1/switch01/telemetry \
+  -m '{"sp": 220.1, "mv": 219.8, "current": 0.55, "power": 121.0, "lux": 410.5, "natural_lux": 180.2, "dimmer": 70, "kwh_today": 0.532}'
 ```

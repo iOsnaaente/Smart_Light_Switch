@@ -19,8 +19,15 @@
 
 static const char *TAG = "LAMP_APP";
 
-/* Endereço do broker Mosquitto do backend na rede local. Ajuste para o
- * host/porta reais do seu ambiente (ver Backend/docker-compose.yml). */
+/* Endereço do broker Mosquitto do backend na rede local.
+ *
+ * PRECISA ser ajustado antes de gravar o firmware: aponte para o IP da
+ * máquina onde o Backend roda (`docker compose up` em /Backend expõe o
+ * Mosquitto na porta 1883 — ver Backend/docker-compose.yml, serviço
+ * "mosquitto"). Para descobrir o IP dessa máquina na sua rede local, use
+ * `ip addr` / `hostname -I` (Linux/macOS) ou `ipconfig` (Windows) e procure
+ * o endereço da interface conectada ao mesmo roteador/AP do dispositivo —
+ * o ESP32 e o Backend precisam estar na mesma rede. */
 static constexpr const char *MQTT_BROKER_URI = "mqtt://192.168.1.100:1883";
 
 /* Rede de emergência aberta pelo wifi_manager quando a reconexão à rede

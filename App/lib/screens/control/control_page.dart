@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/routes/app_routes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/device.dart';
-import '../../models/mock_devices.dart';
+import '../../providers/device_provider.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/control_widgets.dart';
 import '../../widgets/dimmer_slider.dart';
@@ -19,46 +20,79 @@ class ControlPage extends StatefulWidget {
 }
 
 class _ControlPageState extends State<ControlPage> {
-  late Device _device;
+  String? _deviceId;
   bool _ready = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_ready) {
-      final id = widget.deviceId ?? (ModalRoute.of(context)?.settings.arguments as String?);
-      _device = id != null ? deviceById(id) : mockDevices.first;
+      _deviceId = widget.deviceId ?? (ModalRoute.of(context)?.settings.arguments as String?);
       _ready = true;
     }
   }
 
-  void _setMode(int index) {
-    setState(() => _device = _device.copyWith(automaticMode: index == 1));
+  Future<void> _setMode(Device device, int index) async {
+    try {
+      await context.read<DeviceProvider>().setMode(device.id, index == 1);
+    } catch (e) {
+      _showError('Erro ao mudar o modo: $e');
+    }
   }
 
-  void _setDimmer(double value) {
-    setState(() => _device = _device.copyWith(dimmer: value.round()));
+  Future<void> _setDimmer(Device device, double value) async {
+    try {
+      await context.read<DeviceProvider>().setDimmer(device.id, value.round());
+    } catch (e) {
+      _showError('Erro ao ajustar o dimmer: $e');
+    }
   }
 
-  void _reconnect() {
-    setState(() => _device = _device.copyWith(online: true, relayOn: true));
+  Future<void> _reconnect(Device device) async {
+    try {
+      await context.read<DeviceProvider>().refreshDevice(device.id);
+    } catch (e) {
+      _showError('Ainda não foi possível falar com o dispositivo: $e');
+    }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<DeviceProvider>();
+    final device = _deviceId != null ? provider.deviceById(_deviceId!) : null;
+
+    if (device == null) {
+      return Scaffold(
+        backgroundColor: AppColors.paper,
+        appBar: DeviceAppBar(
+          title: 'Dispositivo',
+          subtitle: '—',
+          leading: RoundIconButton(icon: Icons.chevron_left_rounded, onTap: () => Navigator.maybePop(context)),
+        ),
+        body: const Center(child: Text('dispositivo não encontrado', style: TextStyle(color: AppColors.ink2, fontWeight: FontWeight.w500))),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppColors.paper,
       appBar: DeviceAppBar(
-        title: _device.name,
-        subtitle: _device.room,
+        title: device.name,
+        subtitle: device.room,
         leading: RoundIconButton(icon: Icons.chevron_left_rounded, onTap: () => Navigator.maybePop(context)),
         trailing: RoundIconButton(
           icon: Icons.more_horiz_rounded,
           color: AppColors.ink2,
-          onTap: () => Navigator.pushNamed(context, AppRoutes.settings, arguments: _device.id),
+          onTap: () => Navigator.pushNamed(context, AppRoutes.settings, arguments: device.id),
         ),
       ),
-      body: _device.online ? _OnlineBody(device: _device, onModeChanged: _setMode, onDimmerChanged: _setDimmer) : _OfflineBody(device: _device, onReconnect: _reconnect),
+      body: device.online
+          ? _OnlineBody(device: device, onModeChanged: (i) => _setMode(device, i), onDimmerChanged: (v) => _setDimmer(device, v))
+          : _OfflineBody(device: device, onReconnect: () => _reconnect(device)),
       bottomNavigationBar: SmartBottomNav(
         currentIndex: 0,
         onTap: (i) {

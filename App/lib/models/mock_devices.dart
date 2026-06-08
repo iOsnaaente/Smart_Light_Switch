@@ -1,7 +1,8 @@
 import 'device.dart';
 
-/// In-memory sample data used to drive the UI before the real API is wired
-/// in — mirrors the devices shown across the wireframes.
+/// In-memory sample data that powers "Entrar como demonstração": lets
+/// [DeviceProvider] (see ../providers/device_provider.dart) drive the whole UI
+/// with no Backend running, mirroring the devices shown across the wireframes.
 final List<Device> mockDevices = [
   Device(
     id: 'mesa-trabalho',
@@ -59,5 +60,3 @@ final List<Device> mockDevices = [
     lastSeen: 'há 2h',
   ),
 ];
-
-Device deviceById(String id) => mockDevices.firstWhere((d) => d.id == id, orElse: () => mockDevices.first);

@@ -28,6 +28,7 @@ services:
 
   api:
     image: iosnaaente/smart-switch-backend:latest
+    build: .
     container_name: smart_switch_api
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
