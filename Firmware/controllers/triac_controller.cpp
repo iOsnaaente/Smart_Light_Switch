@@ -210,7 +210,7 @@ esp_err_t TriacController::init(
 
 	/* Inicialização concluida - Controlador iniciado */
 	this->initialized = true;
-	ESP_LOGI(
+	ESP_LOGD(
 		LOG_TAG, 
 		"Controller initialized: zc_gpio=%d triac_gpio=%d", 
 		this->zero_cross_gpio, 
@@ -256,7 +256,7 @@ esp_err_t TriacController::start(){
 		this->status = LAMP_STATUS_ERROR;
 		return ESP_ERR_NO_MEM;
 	}
-	ESP_LOGI( LOG_TAG, "Controller started" );
+	ESP_LOGD( LOG_TAG, "Controller started" );
 	this->status = LAMP_STATUS_OK;
 	return ESP_OK;
 }
@@ -281,7 +281,7 @@ esp_err_t TriacController::stop(){
 	gpio_isr_handler_remove(this->zero_cross_gpio);
 	this->zc_online = false;
 	this->status = LAMP_STATUS_OFFLINE;
-	ESP_LOGI(LOG_TAG, "Controller stopped");
+	ESP_LOGD(LOG_TAG, "Controller stopped");
 	return ESP_OK;
 }
 

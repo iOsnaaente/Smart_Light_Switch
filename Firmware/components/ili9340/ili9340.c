@@ -389,7 +389,19 @@ void lcdInit(TFT_t * dev, uint16_t model, int width, int height, int offsetx, in
 		spi_master_write_data_byte(dev, 0x86);
 
 		spi_master_write_comm_byte(dev, 0x36); //Memory Access Control
-		spi_master_write_data_byte(dev, 0x08); //Right top start, BGR color filter panel
+		/* [DEBUG] MADCTL trocado de 0x08 -> 0xE8: o painel é nativamente
+		 * PAISAGEM sob 0x08 (MV=0), mas o usuário monta/visualiza em pé
+		 * (retrato, 240x320). O bit MV troca linha<->coluna no endereçamento
+		 * (gira 90° em HARDWARE, sem custo de CPU/RAM). 0x28 (MV=1, sem
+		 * espelhamento) já girou no eixo certo, mas saiu de cabeça para baixo
+		 * (180°) — invertendo MY e MX juntos (-> 0xE8) espelha nos dois eixos,
+		 * o que soma 180° à rotação e corrige a imagem. Bits: MY|MX|MV|ML|BGR|MH.
+		 *   0x28 = MY=0 MX=0 MV=1 BGR=1  <- girou certo, mas de cabeça p/ baixo
+		 *   0xE8 = MY=1 MX=1 MV=1 BGR=1  <- 0x28 + 180° (atual, deve corrigir)
+		 *   0x68 = MY=0 MX=1 MV=1 BGR=1  <- se 0xE8 ainda sair espelhado
+		 *   0xA8 = MY=1 MX=0 MV=1 BGR=1     (espelho no eixo oposto), tente este */
+		spi_master_write_data_byte(dev, 0xE8); //MV=1 + MY=1 + MX=1 (retrato, +180°), BGR color filter panel
+		//spi_master_write_data_byte(dev, 0x08); //Right top start, BGR color filter panel (paisagem nativo)
 		//spi_master_write_data_byte(dev, 0x00); //Right top start, RGB color filter panel
 
 		spi_master_write_comm_byte(dev, 0x3A); //Pixel Format Set

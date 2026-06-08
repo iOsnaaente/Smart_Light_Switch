@@ -38,8 +38,18 @@ static esp_err_t init_nvs(void) {
 
 /* Botão de reset de provisionamento: mantido pressionado (nível baixo, pull-up
  * interno) durante o boot apaga as credenciais Wi-Fi salvas e força a
- * reabertura do pareamento BLE. */
+ * reabertura do pareamento BLE.
+ *
+ * [DEBUG] DESABILITADO TEMPORARIAMENTE — PIN_NUM_PROVISION_RESET (board_config.h)
+ * está em GPIO18, que no ESP32-C3 é o pino D- do USB nativo (USB-Serial/JTAG,
+ * o mesmo que o sdkconfig atual usa como console/monitor). O gpio_config()
+ * abaixo reconfigura esse pino como GPIO digital comum em pleno uso do USB,
+ * derrubando o `idf.py monitor` e desestabilizando o link — provável causa
+ * dos resets observados ao habilitar o comm_manager. Religar só depois de
+ * mover PIN_NUM_PROVISION_RESET para um pino que não conflite com USB/console
+ * (GPIO18/19) nem com o restante do mapa de pinos da placa. */
 static bool provision_reset_requested(void) {
+#if 0
     gpio_config_t io_conf = {};
     io_conf.pin_bit_mask = (1ULL << PIN_NUM_PROVISION_RESET);
     io_conf.mode = GPIO_MODE_INPUT;
@@ -54,6 +64,9 @@ static bool provision_reset_requested(void) {
         ESP_LOGW(TAG, "Botão de reset de provisionamento pressionado no boot: limpando credenciais Wi-Fi");
     }
     return pressed;
+#else
+    return false;
+#endif
 }
 
 /* Liga/desliga o pareamento BLE sob pedido da UI (toque na linha "Wi-Fi" de

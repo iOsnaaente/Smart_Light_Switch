@@ -48,6 +48,64 @@ static void refresh_all_screens(void) {
 }
 
 /* ============================================================================
+ * [DEBUG] Log "cru" de toque — roda para QUALQUER widget pressionado em
+ * qualquer tela, MESMO os sem callback (ex.: calib_row). Registrado no INDEV
+ * (lv_indev_add_event_cb), não no objeto: o LVGL despacha LV_EVENT_PRESSED
+ * pro indev com o objeto-alvo como `param` (ver send_event() em lv_indev.c,
+ * repassado por lv_indev_send_event(indev, code, indev_obj_act)) ANTES de
+ * despachar pro próprio objeto — então isto enxerga o alvo de TODO toque,
+ * independente de quem tem ou não um lv_obj_add_event_cb associado.
+ *
+ * Serve pra responder, depois da recalibração do touch: o dedo está mesmo
+ * acertando a hitbox do botão visado, ou está caindo no "fundo" da tela
+ * (cartão/tela inteira, que tem callback de NAVEGAÇÃO) e troca de tela por
+ * engano? A tabela widget_name_of() cobre todo objeto tocável criado em
+ * ui_manager_init(); o que cair em "outro widget" tem nome só no LVGL
+ * (use o ponteiro logado para cruzar com os *_create() das telas).
+ * Remover quando os menus responderem de forma confiável ao toque. */
+static const char *screen_name_of(const lv_obj_t *screen) {
+    if (screen == s_main.root)     return "Principal";
+    if (screen == s_auto.root)     return "Modo Automático";
+    if (screen == s_settings.root) return "Ajustes";
+    return "?";
+}
+
+static const char *widget_name_of(const lv_obj_t *obj) {
+    if (obj == nullptr)                       return "(nenhum)";
+    if (obj == s_main.root)                   return "fundo da tela Principal";
+    if (obj == s_main.status_bar)             return "barra de status (toque -> Ajustes)";
+    if (obj == s_main.room_card)              return "cartão da sala (toque -> Auto)";
+    if (obj == s_main.stepper.btn_minus)      return "stepper [-]";
+    if (obj == s_main.stepper.btn_plus)       return "stepper [+]";
+    if (obj == s_main.power_btn.root)         return "botão de força (liga/desliga)";
+    if (obj == s_auto.root)                   return "fundo da tela Auto";
+    if (obj == s_auto.header.back_btn)        return "Auto: voltar (<)";
+    if (obj == s_auto.auto_toggle)            return "Auto: interruptor mestre";
+    if (obj == s_auto.target_minus_btn)       return "Auto: alvo [-]";
+    if (obj == s_auto.target_plus_btn)        return "Auto: alvo [+]";
+    if (obj == s_auto.sensitivity_slider)     return "Auto: slider de sensibilidade";
+    if (obj == s_settings.root)               return "fundo da tela Ajustes";
+    if (obj == s_settings.header.back_btn)    return "Ajustes: voltar (<)";
+    if (obj == s_settings.language_seg.btn_a) return "Ajustes: idioma PT";
+    if (obj == s_settings.language_seg.btn_b) return "Ajustes: idioma EN";
+    if (obj == s_settings.calib_row)          return "Ajustes: calibrar sensor (SEM callback ainda)";
+    if (obj == s_settings.wifi_row)           return "Ajustes: Wi-Fi (toque -> parear BLE)";
+    return "outro widget (sem nome mapeado — confira o ponteiro)";
+}
+
+static void on_indev_press_debug(lv_event_t *e) {
+    lv_obj_t *target = (lv_obj_t *)lv_event_get_param(e);
+    lv_obj_t *screen = (target != nullptr) ? lv_obj_get_screen(target) : lv_screen_active();
+    ESP_LOGI(
+        TAG,
+        "[DEBUG] Toque: tela='%s' widget='%s' (obj=%p)",
+        screen_name_of(screen),
+        widget_name_of(target),
+        (void *)target
+    );
+}
+
+/* ============================================================================
  * Toques — disparados de dentro de lv_timer_handler(), já sob lvgl_port_lock
  * ========================================================================== */
 
@@ -219,6 +277,12 @@ esp_err_t ui_manager_init(void) {
     screen_auto_create(&s_auto);
     screen_settings_create(&s_settings);
     refresh_all_screens();
+
+    /* ---- [DEBUG] log cru de toque: roda ANTES de qualquer callback abaixo,
+     * pra todo objeto pressionado (com ou sem ação própria) — ver comentário
+     * de on_indev_press_debug/widget_name_of, logo acima. lv_indev_get_next
+     * (nullptr) pega o 1º (e único) indev registrado em lvgl_port_init. */
+    lv_indev_add_event_cb(lv_indev_get_next(nullptr), on_indev_press_debug, LV_EVENT_PRESSED, nullptr);
 
     /* ---- navegação entre as 3 telas --------------------------------------- */
     lv_obj_add_event_cb(s_main.room_card,           on_navigate, LV_EVENT_CLICKED, s_auto.root);

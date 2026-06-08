@@ -16,8 +16,24 @@
 #include "app_modes.h"
 #include "event_bus.h"
 
+#include "credentials.h"
+
 
 static const char *TAG = "LAMP_APP";
+
+/**
+ * @brief   Chaves para isolar a comunicação durante o debug do reset.
+ * @details Wi-Fi sempre sobe junto quando o comm_manager inicia (a task de
+ *          orquestração chama wifi_manager_start incondicionalmente) — então
+ *          "Wi-Fi isolado" é só ble=0/mqtt=0. Vá ligando um de cada vez,
+ *          recompilando/flasheando entre os testes:
+ *              1) ble=0 mqtt=0  -> só Wi-Fi
+ *              2) ble=1 mqtt=0  -> Wi-Fi + provisionamento BLE
+ *              3) ble=0 mqtt=1  -> Wi-Fi + MQTT
+ *              4) ble=1 mqtt=1  -> tudo (config original)
+ */
+#define COMM_TEST_ENABLE_BLE   1
+#define COMM_TEST_ENABLE_MQTT  1
 
 static TriacController *triac_cntrl;
 static LDRSensor *ldr_sensor;
@@ -127,19 +143,23 @@ static void lamp_control_task( void *arg ) {
                 pdMS_TO_TICKS(100)
             );
 
-            /* Debug */
+            /* [DEBUG] Rebaixado de LOGI -> LOGD: enquanto o foco é depurar a UI
+             * (touch/menus), esse bloco a cada ~2.5s só polui o monitor serial
+             * e atrapalha a leitura dos logs [DEBUG] de touch/navegação. Sobe
+             * de novo pra LOGI (ou `idf.py menuconfig` -> Log level = Debug)
+             * quando precisar depurar LDR/triac de novo. */
             if ( (counter++) % 25 == 0 ) {
-                ESP_LOGI( TAG, "LDR Normalized: %.2f", normalized );
-                ESP_LOGI( TAG, "Triac Status: %s", lamp_status_to_string(triac_cntrl->status)  );
+                ESP_LOGD( TAG, "LDR Normalized: %.2f", normalized );
+                ESP_LOGD( TAG, "Triac Status: %s", lamp_status_to_string(triac_cntrl->status)  );
                 if ( triac_cntrl->zc_online ) {
-                    ESP_LOGI( TAG, "Setpoint: %.2f%%", triac_cntrl->setpoint * 100.0f );
+                    ESP_LOGD( TAG, "Setpoint: %.2f%%", triac_cntrl->setpoint * 100.0f );
                 } else {
-                    ESP_LOGI( TAG, "Setpoint: N/A (ZC Offline)" );
+                    ESP_LOGD( TAG, "Setpoint: N/A (ZC Offline)" );
                 }
-                ESP_LOGI( TAG, "Triac Pulse Count: %u", triac_cntrl->triac_pulse_count );
-                ESP_LOGI( TAG, "ISR Count: %u", triac_cntrl->isr_count );
-                ESP_LOGI( TAG, "Last Half Cycle (ms): %.2f", triac_cntrl->last_half_cycle_us / 1000.0f );
-                ESP_LOGI( TAG, "Debounce Drop Count: %u\n", triac_cntrl->debounce_drop_count );
+                ESP_LOGD( TAG, "Triac Pulse Count: %u", triac_cntrl->triac_pulse_count );
+                ESP_LOGD( TAG, "ISR Count: %u", triac_cntrl->isr_count );
+                ESP_LOGD( TAG, "Last Half Cycle (ms): %.2f", triac_cntrl->last_half_cycle_us / 1000.0f );
+                ESP_LOGD( TAG, "Debounce Drop Count: %u\n", triac_cntrl->debounce_drop_count );
             }
         }
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -150,10 +170,29 @@ static void lamp_control_task( void *arg ) {
 extern "C" void app_main(void) {
     esp_err_t err;
 
+    /* [DEBUG] Movido para ANTES do comm_manager: o driver SPI do TFT precisa
+     * de memória capaz de DMA para o barramento (spi_bus_initialize). Se o
+     * BLE/Wi-Fi/MQTT subirem primeiro, consomem essa memória e o ili9340
+     * falha com ESP_ERR_NO_MEM (257) -> assert -> reset (visto no monitor
+     * com comm_manager habilitado). Inicializando o display primeiro, ele
+     * garante seus buffers DMA enquanto a memória ainda está livre. */
+    ESP_LOGI( TAG, "Inicializando interface local (LVGL)");
+    err = lvgl_port_init();
+    if (err != ESP_OK) {
+        ESP_LOGE( TAG, "Falha ao inicializar o LVGL: %s", esp_err_to_name(err));
+    } else {
+        err = ui_manager_init();
+        if (err != ESP_OK) {
+            ESP_LOGE( TAG, "Falha ao montar a interface: %s", esp_err_to_name(err));
+        } else {
+            ui_manager_start();
+        }
+    }
+
     ESP_LOGI( TAG, "Inicializando ciclo de conectividade (BLE -> Wi-Fi -> MQTT)");
     comm_manager_config_t comm_cfg = {};
-    comm_cfg.enable_ble = true;
-    comm_cfg.enable_mqtt = true;
+    comm_cfg.enable_ble = COMM_TEST_ENABLE_BLE;
+    comm_cfg.enable_mqtt = COMM_TEST_ENABLE_MQTT;
     comm_cfg.enable_http = false;
     comm_cfg.mqtt_broker_uri = MQTT_BROKER_URI;
     comm_cfg.mqtt_username = MQTT_USERNAME;
@@ -167,7 +206,7 @@ extern "C" void app_main(void) {
         comm_manager_start();
     }
 
-    ESP_LOGI( TAG, "Inicializando sensor LDR");
+    ESP_LOGD( TAG, "Inicializando sensor LDR");
     ldr_sensor = new LDRSensor();
     err = ldr_sensor->init(
         ADC_UNIT_1, ADC_CHANNEL_0,
@@ -179,11 +218,11 @@ extern "C" void app_main(void) {
     if (err != ESP_OK) {
         ESP_LOGE( TAG, "Falha ao inicializar o LDR: %s", esp_err_to_name(err));
     } else {
-        ESP_LOGI( TAG, "LDR configurado no GPIO %d", (int)PIN_NUM_SENSOR_LDR);
+        ESP_LOGD( TAG, "LDR configurado no GPIO %d", (int)PIN_NUM_SENSOR_LDR);
         ldr_sensor->start();
     }
 
-    ESP_LOGI( TAG, "Inicializando controlador de triac");
+    ESP_LOGD( TAG, "Inicializando controlador de triac");
     triac_cntrl = new TriacController();
     err = triac_cntrl->init(
         PIN_NUM_ZEROCROSS, 
@@ -213,19 +252,6 @@ extern "C" void app_main(void) {
         5, 
         nullptr
     );
-
-    ESP_LOGI( TAG, "Inicializando interface local (LVGL)");
-    err = lvgl_port_init();
-    if (err != ESP_OK) {
-        ESP_LOGE( TAG, "Falha ao inicializar o LVGL: %s", esp_err_to_name(err));
-    } else {
-        err = ui_manager_init();
-        if (err != ESP_OK) {
-            ESP_LOGE( TAG, "Falha ao montar a interface: %s", esp_err_to_name(err));
-        } else {
-            ui_manager_start();
-        }
-    }
 
     vTaskDelay(pdMS_TO_TICKS(1000));
     ESP_LOGI( TAG, "Setup completo. Tasks inicializadas.");

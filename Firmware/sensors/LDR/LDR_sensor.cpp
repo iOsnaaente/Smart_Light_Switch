@@ -95,7 +95,7 @@ esp_err_t LDRSensor::init(
 		this->adc_handle = nullptr;
 		return err;
 	}
-	ESP_LOGI(
+	ESP_LOGD(
 		this->LOG_TAG,
 		"LDR inicializado (unit=%d channel=%d periodo=%lums)",
 		(int)this->unit,
