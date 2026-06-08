@@ -17,6 +17,8 @@
 
 #include "device_identity.h"
 #include "wifi_manager.h"
+#include "app_events.h"
+#include "event_bus.h"
 
 static const char *TAG = "BLE_SETUP";
 
@@ -119,6 +121,32 @@ static bool s_stack_initialized = false;
 static char s_device_name[24];
 static char s_device_id[24];
 
+/* Pacote de scan response: carrega o device_id como "manufacturer specific
+ * data" (0xFFFF = faixa reservada para uso interno/teste, não atribuída pela
+ * Bluetooth SIG) para que apps possam filtrar dispositivos pelo ID já no
+ * resultado do scan, sem precisar conectar primeiro. Preenchido em
+ * ble_setup_init(), depois que device_identity_get_id() resolve s_device_id. */
+#define BLE_PROV_MFG_COMPANY_ID 0xFFFF
+
+static uint8_t  s_scan_rsp_mfg_data[2 + sizeof(s_device_id)];
+static uint16_t s_scan_rsp_mfg_len = 0;
+
+static esp_ble_adv_data_t s_scan_rsp_data = {
+    .set_scan_rsp        = true,
+    .include_name        = false,
+    .include_txpower     = false,
+    .min_interval        = 0x20,
+    .max_interval        = 0x40,
+    .appearance          = 0x00,
+    .manufacturer_len    = 0,
+    .p_manufacturer_data = NULL,
+    .service_data_len    = 0,
+    .p_service_data      = NULL,
+    .service_uuid_len    = 0,
+    .p_service_uuid      = NULL,
+    .flag                = 0,
+};
+
 typedef struct {
     char ssid[33];
     char password[65];
@@ -143,6 +171,11 @@ static void update_status_value(const char *status, bool include_device_id) {
     }
 
     ESP_LOGI(TAG, "Status de provisionamento: %s", json);
+}
+
+static void post_provision_status(bool active) {
+    event_ble_provision_status_t evt = { .active = active };
+    event_bus_post(SMART_SWITCH_EVENT_BLE_PROVISION_STATUS, &evt, sizeof(evt), pdMS_TO_TICKS(100));
 }
 
 static void provisioning_task(void *arg) {
@@ -225,6 +258,11 @@ static void handle_credentials_write(const uint8_t *value, uint16_t len) {
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
     switch (event) {
         case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
+            // Encadeia o scan response (carrega o device_id) antes de
+            // anunciar — só sobe o rádio quando os dois pacotes estiverem prontos.
+            esp_ble_gap_config_adv_data(&s_scan_rsp_data);
+            break;
+        case ESP_GAP_BLE_SCAN_RSP_DATA_SET_COMPLETE_EVT:
             esp_ble_gap_start_advertising(&s_adv_params);
             break;
         case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
@@ -328,6 +366,15 @@ esp_err_t ble_setup_init(void) {
     device_identity_get_id(s_device_id, sizeof(s_device_id));
     device_identity_get_ble_name(s_device_name, sizeof(s_device_name));
 
+    /* Monta o manufacturer data do scan response: [company_id LE][device_id ASCII] */
+    size_t id_len = strlen(s_device_id);
+    s_scan_rsp_mfg_data[0] = (uint8_t)(BLE_PROV_MFG_COMPANY_ID & 0xFF);
+    s_scan_rsp_mfg_data[1] = (uint8_t)(BLE_PROV_MFG_COMPANY_ID >> 8);
+    memcpy(&s_scan_rsp_mfg_data[2], s_device_id, id_len);
+    s_scan_rsp_mfg_len = (uint16_t)(2 + id_len);
+    s_scan_rsp_data.manufacturer_len    = s_scan_rsp_mfg_len;
+    s_scan_rsp_data.p_manufacturer_data = s_scan_rsp_mfg_data;
+
     esp_err_t err = esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGW(TAG, "esp_bt_controller_mem_release: %s", esp_err_to_name(err));
@@ -385,6 +432,7 @@ esp_err_t ble_setup_start(void) {
     update_status_value("idle", false);
 
     s_running = true;
+    post_provision_status(true);
     ESP_LOGI(TAG, "Iniciando provisionamento BLE como '%s'", s_device_name);
     return ESP_OK;
 }
@@ -394,6 +442,7 @@ esp_err_t ble_setup_stop(void) {
         return ESP_OK;
     }
 
+    bool was_running = s_running;
     s_running = false;
     esp_ble_gap_stop_advertising();
 
@@ -408,6 +457,9 @@ esp_err_t ble_setup_stop(void) {
     esp_bt_controller_deinit();
 
     s_stack_initialized = false;
+    if (was_running) {
+        post_provision_status(false);
+    }
     ESP_LOGI(TAG, "BLE provisioning encerrado, rádio/memória liberados");
     return ESP_OK;
 }

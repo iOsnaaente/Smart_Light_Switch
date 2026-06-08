@@ -104,6 +104,16 @@ static void on_sensitivity_changed(lv_event_t *e) {
     s_state.sensitivity_pct = (uint8_t)lv_slider_get_value(slider);
 }
 
+// Linha "Wi-Fi" (tela Ajustes): alterna o pareamento BLE — liga para abrir
+// a janela de provisionamento (enviar novo SSID/senha/user_id) e liga de
+// novo para cancelar. O eco real chega via BLE_PROVISION_STATUS (on_ble_
+// provision_status, abaixo): só então o rótulo muda para "pareando…".
+static void on_wifi_row_tap(lv_event_t *e) {
+    (void)e;
+    event_ble_provision_command_t cmd = { .enable = !s_state.ble_pairing_active };
+    event_bus_post(SMART_SWITCH_EVENT_BLE_PROVISION_COMMAND, &cmd, sizeof(cmd), pdMS_TO_TICKS(100));
+}
+
 // Segmento PT/EN (tela Ajustes): user_data carrega o idioma escolhido;
 // redesenhar tudo de uma vez retexta as 3 telas no idioma novo.
 static void on_language_selected(lv_event_t *e) {
@@ -166,6 +176,16 @@ static void on_setpoint_changed(void *handler_arg, esp_event_base_t base, int32_
     lvgl_port_unlock();
 }
 
+static void on_ble_provision_status(void *handler_arg, esp_event_base_t base, int32_t id, void *event_data) {
+    event_ble_provision_status_t *evt = (event_ble_provision_status_t *)event_data;
+    if (!lvgl_port_lock(100)) {
+        return;
+    }
+    s_state.ble_pairing_active = evt->active;
+    refresh_all_screens();
+    lvgl_port_unlock();
+}
+
 static void on_net_status(void *handler_arg, esp_event_base_t base, int32_t id, void *event_data) {
     event_net_status_t *evt = (event_net_status_t *)event_data;
     if (!lvgl_port_lock(100)) {
@@ -217,19 +237,20 @@ esp_err_t ui_manager_init(void) {
     lv_obj_add_event_cb(s_auto.target_plus_btn,    on_target_step,         LV_EVENT_CLICKED,       (void *)(intptr_t)(+1));
     lv_obj_add_event_cb(s_auto.sensitivity_slider, on_sensitivity_changed, LV_EVENT_VALUE_CHANGED, nullptr);
 
-    /* ---- tela Ajustes: idioma ---------------------------------------------
-     * calib_row/wifi_row ficam de fora por ora: ainda não existe rotina de
-     * calibração nem tela de detalhes de rede para abrir. Os Rows continuam
-     * visíveis (espelhando o wireframe), só não reagem ao toque ainda. */
+    /* ---- tela Ajustes: idioma e Wi-Fi (-> pareamento BLE) -----------------
+     * calib_row fica de fora por ora: ainda não existe rotina de calibração.
+     * Continua visível (espelhando o wireframe), só não reage ao toque ainda. */
     lv_obj_add_event_cb(s_settings.language_seg.btn_a, on_language_selected, LV_EVENT_CLICKED, (void *)(intptr_t)UI_LANG_PT);
     lv_obj_add_event_cb(s_settings.language_seg.btn_b, on_language_selected, LV_EVENT_CLICKED, (void *)(intptr_t)UI_LANG_EN);
+    lv_obj_add_event_cb(s_settings.wifi_row, on_wifi_row_tap, LV_EVENT_CLICKED, nullptr);
 
     /* ---- assina o event_bus: mantém s_state em sincronia com o sistema ---- */
-    event_bus_register(SMART_SWITCH_EVENT_LDR_UPDATE,       &on_ldr_update,       nullptr);
-    event_bus_register(SMART_SWITCH_EVENT_DIMMER_UPDATE,    &on_dimmer_update,    nullptr);
-    event_bus_register(SMART_SWITCH_EVENT_MODE_CHANGED,     &on_mode_changed,     nullptr);
-    event_bus_register(SMART_SWITCH_EVENT_SETPOINT_CHANGED, &on_setpoint_changed, nullptr);
-    event_bus_register(SMART_SWITCH_EVENT_NET_STATUS,       &on_net_status,       nullptr);
+    event_bus_register(SMART_SWITCH_EVENT_LDR_UPDATE,           &on_ldr_update,           nullptr);
+    event_bus_register(SMART_SWITCH_EVENT_DIMMER_UPDATE,        &on_dimmer_update,        nullptr);
+    event_bus_register(SMART_SWITCH_EVENT_MODE_CHANGED,         &on_mode_changed,         nullptr);
+    event_bus_register(SMART_SWITCH_EVENT_SETPOINT_CHANGED,     &on_setpoint_changed,     nullptr);
+    event_bus_register(SMART_SWITCH_EVENT_NET_STATUS,           &on_net_status,           nullptr);
+    event_bus_register(SMART_SWITCH_EVENT_BLE_PROVISION_STATUS, &on_ble_provision_status, nullptr);
 
     s_initialized = true;
     ESP_LOGI(TAG, "telas montadas, toques ligados e event_bus assinado");

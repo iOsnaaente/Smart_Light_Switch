@@ -56,6 +56,18 @@ static bool provision_reset_requested(void) {
     return pressed;
 }
 
+/* Liga/desliga o pareamento BLE sob pedido da UI (toque na linha "Wi-Fi" de
+ * Ajustes) ou de um comando externo equivalente — eco real via
+ * BLE_PROVISION_STATUS, publicado por ble_setup_start/stop. */
+static void on_ble_provision_command(void *handler_arg, esp_event_base_t base, int32_t id, void *event_data) {
+    event_ble_provision_command_t *evt = (event_ble_provision_command_t *)event_data;
+    if (evt->enable) {
+        ble_setup_start();
+    } else {
+        ble_setup_stop();
+    }
+}
+
 /* ---- task de orquestração ----------------------------------------------- */
 
 static void comm_manager_task(void *arg) {
@@ -137,6 +149,7 @@ esp_err_t comm_manager_init(const comm_manager_config_t *config) {
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "Falha ao inicializar BLE provisioning: %s", esp_err_to_name(err));
         }
+        event_bus_register(SMART_SWITCH_EVENT_BLE_PROVISION_COMMAND, &on_ble_provision_command, nullptr);
     }
 
     if (s_config.enable_mqtt) {

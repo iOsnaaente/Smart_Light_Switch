@@ -20,6 +20,8 @@ typedef enum {
     SMART_SWITCH_EVENT_NET_STATUS,
     SMART_SWITCH_EVENT_RELAY_COMMAND,
     SMART_SWITCH_EVENT_DIMMER_COMMAND,
+    SMART_SWITCH_EVENT_BLE_PROVISION_COMMAND,
+    SMART_SWITCH_EVENT_BLE_PROVISION_STATUS,
 } smart_switch_event_id_t;
 
 typedef struct {
@@ -65,6 +67,22 @@ typedef struct {
 typedef struct {
     uint8_t value;
 } event_dimmer_command_t;
+
+/* Pedido para ligar/desligar o pareamento BLE (provisionamento de Wi-Fi +
+ * user_id) — disparado pelo toque na linha "Wi-Fi" da tela de Ajustes (ou
+ * por um comando externo equivalente). O comm_manager trata este evento
+ * chamando ble_setup_start()/ble_setup_stop(). */
+typedef struct {
+    bool enable;
+} event_ble_provision_command_t;
+
+/* Eco do estado real do serviço de pareamento BLE — publicado por ble_setup
+ * ao iniciar/encerrar o anúncio (inclusive quando ele se encerra sozinho
+ * após receber e validar credenciais com sucesso), para a UI refletir o
+ * que de fato está acontecendo no rádio. */
+typedef struct {
+    bool active;
+} event_ble_provision_status_t;
 
 #ifdef __cplusplus
 }

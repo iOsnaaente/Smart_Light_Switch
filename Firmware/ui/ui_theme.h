@@ -68,6 +68,7 @@ typedef struct {
     const char *disconnected;
     const char *when_dark;
     const char *wifi;
+    const char *pairing;
 } ui_strings_t;
 
 static inline const ui_strings_t *ui_theme_strings(ui_lang_t lang) {
@@ -81,6 +82,7 @@ static inline const ui_strings_t *ui_theme_strings(ui_lang_t lang) {
         .connected = "conectado", .disconnected = "—",
         .when_dark = "Quando escurece, a lâmpada completa até o alvo.",
         .wifi = "Wi-Fi",
+        .pairing = "pareando…",
     };
     static const ui_strings_t en = {
         .room = "Living Room", .on = "On", .off = "Off",
@@ -92,6 +94,7 @@ static inline const ui_strings_t *ui_theme_strings(ui_lang_t lang) {
         .connected = "connected", .disconnected = "—",
         .when_dark = "When it gets dark, the lamp fills up to target.",
         .wifi = "Wi-Fi",
+        .pairing = "pairing…",
     };
     return (lang == UI_LANG_EN) ? &en : &pt;
 }

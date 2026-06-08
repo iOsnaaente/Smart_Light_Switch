@@ -196,7 +196,11 @@ void screen_settings_update(const screen_settings_t *screen, const ui_runtime_st
     lv_label_set_text(screen->calib_label, s->calib);
 
     lv_label_set_text(screen->wifi_label, s->wifi);
-    lv_label_set_text(screen->wifi_value_label, state->wifi_connected ? state->ip_addr : s->disconnected);
+    if (state->ble_pairing_active) {
+        lv_label_set_text(screen->wifi_value_label, s->pairing);
+    } else {
+        lv_label_set_text(screen->wifi_value_label, state->wifi_connected ? state->ip_addr : s->disconnected);
+    }
 
     lv_label_set_text(screen->about_label, s->about);
 }

@@ -32,9 +32,24 @@ static TriacController *triac_cntrl;
 static LDRSensor *ldr_sensor;
 
 
+static void on_dimmer_command(void *handler_arg, esp_event_base_t base, int32_t id, void *event_data) {
+    event_dimmer_command_t *evt = (event_dimmer_command_t *)event_data;
+    if (triac_cntrl != nullptr) {
+        triac_cntrl->set_setpoint(evt->value / 100.0f);
+    }
+}
+
+static void on_relay_command(void *handler_arg, esp_event_base_t base, int32_t id, void *event_data) {
+    event_relay_command_t *evt = (event_relay_command_t *)event_data;
+    if (triac_cntrl != nullptr) {
+        triac_cntrl->set_setpoint(evt->relay_on ? 1.0f : 0.0f);
+    }
+}
+
 static void lamp_control_task( void *arg ) {
     uint32_t counter = 0;
     float normalized = 0.0f;
+    float voltage = 0.0f;
     while (true) {
         if ( triac_cntrl != nullptr ) {
 
@@ -43,22 +58,47 @@ static void lamp_control_task( void *arg ) {
             if (err != ESP_OK) {
                 ESP_LOGE( TAG, "Erro ao ler valor normalizado do LDR: %s", esp_err_to_name(err) );
                 triac_cntrl->status = LAMP_STATUS_ERROR;
-                vTaskDelay(pdMS_TO_TICKS(100)); 
+                vTaskDelay(pdMS_TO_TICKS(100));
                 continue;
             }
+            ldr_sensor->read_voltage( &voltage );
 
-            /* Faz o guardrail do valor normalizado */
-            if ( normalized < 0.05f ) {
-                // Força o setpoint para 0.0f quando a luz ambiente estiver muito baixa
-                triac_cntrl->status = LAMP_FULLY_ON;
-                normalized = 0.0f; 
-            } else if (normalized > 0.95f) {
-                // Força o setpoint para 1.0f quando a luz ambiente estiver muito alta
-                triac_cntrl->status = LAMP_FULLY_OFF;
-                normalized = 1.0f; 
-            } else {
-                triac_cntrl->status = LAMP_STATUS_OK;
+            /* Publica a leitura crua do LDR — quem decide o que ela significa
+             * (telas, MQTT) assina LDR_UPDATE; o guardrail abaixo só "achata"
+             * os extremos para fins de controle. */
+            event_ldr_update_t ldr_evt = { .normalized = normalized, .voltage = voltage };
+            event_bus_post(SMART_SWITCH_EVENT_LDR_UPDATE, &ldr_evt, sizeof(ldr_evt), pdMS_TO_TICKS(100));
+
+            /* O ajuste automático por LDR só faz sentido no modo Automático —
+             * no Manual, quem decide o setpoint são os comandos vindos da UI/
+             * MQTT/BLE (DIMMER_COMMAND/RELAY_COMMAND, tratados em
+             * on_dimmer_command/on_relay_command, acima). */
+            if ( app_modes_get() == APP_MODE_AUTOMATIC ) {
+                /* Faz o guardrail do valor normalizado */
+                if ( normalized < 0.05f ) {
+                    // Força o setpoint para 0.0f quando a luz ambiente estiver muito baixa
+                    triac_cntrl->status = LAMP_FULLY_ON;
+                    normalized = 0.0f;
+                } else if (normalized > 0.95f) {
+                    // Força o setpoint para 1.0f quando a luz ambiente estiver muito alta
+                    triac_cntrl->status = LAMP_FULLY_OFF;
+                    normalized = 1.0f;
+                } else {
+                    triac_cntrl->status = LAMP_STATUS_OK;
+                }
+
+                /* Aplica o setpoint do triac */
+                triac_cntrl->set_setpoint( normalized );
             }
+
+            /* Publica o estado atual do dimmer — espelha o setpoint realmente
+             * armado no triac agora (decidido pelo automático ou por um
+             * comando manual), para telas/MQTT ecoarem o valor de verdade.
+             * delay_us não tem um equivalente público exato no controlador
+             * (o atraso de disparo é interno); usamos last_half_cycle_us —
+             * a telemetria de tempo mais próxima e honesta disponível. */
+            event_dimmer_update_t dimmer_evt = { .duty = triac_cntrl->setpoint, .delay_us = triac_cntrl->last_half_cycle_us };
+            event_bus_post(SMART_SWITCH_EVENT_DIMMER_UPDATE, &dimmer_evt, sizeof(dimmer_evt), pdMS_TO_TICKS(100));
 
             /* Debug */
             if ( (counter++) % 25 == 0 ) {
@@ -74,24 +114,8 @@ static void lamp_control_task( void *arg ) {
                 ESP_LOGI( TAG, "Last Half Cycle (ms): %.2f", triac_cntrl->last_half_cycle_us / 1000.0f );
                 ESP_LOGI( TAG, "Debounce Drop Count: %u\n", triac_cntrl->debounce_drop_count );
             }
-
-            /* Aplica o setpoint do triac */
-            triac_cntrl->set_setpoint( normalized );
         }
         vTaskDelay(pdMS_TO_TICKS(100));
-    }
-}
-
-
-static void display_update_task( void *arg ) {
-    display_manager_init();
-    size_t image_count = display_manager_get_image_count();
-    size_t image_index = esp_random() % image_count;
-    while (true) {
-        image_index = (image_index + 1) % image_count;
-        display_manager_show_image(image_index);
-        // Atualiza a imagem a cada 5 minutos = 5 * 60 * 1000 ms = 300000 ms
-        vTaskDelay(pdMS_TO_TICKS(5ULL * 60ULL * 1000ULL)); 
     }
 }
 
@@ -144,6 +168,11 @@ extern "C" void app_main(void) {
         );
     } else {
         triac_cntrl->start();
+
+        // Comandos vindos de qualquer canal (MQTT/BLE/UI) chegam aqui como
+        // eventos — aplicam direto no controlador, ponto final do "comando".
+        event_bus_register(SMART_SWITCH_EVENT_DIMMER_COMMAND, &on_dimmer_command, nullptr);
+        event_bus_register(SMART_SWITCH_EVENT_RELAY_COMMAND,  &on_relay_command,  nullptr);
     }
 
     ESP_LOGI( TAG, "Iniciando tarefa de controle da lâmpada");
@@ -156,15 +185,18 @@ extern "C" void app_main(void) {
         nullptr
     );
 
-    ESP_LOGI( TAG, "Inicializando display manager");
-    xTaskCreate(
-        display_update_task, 
-        "display_update", 
-        1024*4, 
-        nullptr, 
-        5, 
-        nullptr
-    );
+    ESP_LOGI( TAG, "Inicializando interface local (LVGL)");
+    err = lvgl_port_init();
+    if (err != ESP_OK) {
+        ESP_LOGE( TAG, "Falha ao inicializar o LVGL: %s", esp_err_to_name(err));
+    } else {
+        err = ui_manager_init();
+        if (err != ESP_OK) {
+            ESP_LOGE( TAG, "Falha ao montar a interface: %s", esp_err_to_name(err));
+        } else {
+            ui_manager_start();
+        }
+    }
 
     vTaskDelay(pdMS_TO_TICKS(1000));
     ESP_LOGI( TAG, "Setup completo. Tasks inicializadas.");

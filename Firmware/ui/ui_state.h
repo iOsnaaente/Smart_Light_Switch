@@ -31,6 +31,7 @@ typedef struct {
     float      target_lux;           // alvo configurado no modo automático (local + SETPOINT_CHANGED)
     bool       wifi_connected;       // status de rede (event_bus: NET_STATUS)
     char       ip_addr[16];          // IP atual, exibido em Ajustes > Wi-Fi
+    bool       ble_pairing_active;   // pareamento BLE em andamento (event_bus: BLE_PROVISION_STATUS)
     uint8_t    sensitivity_pct;      // sensibilidade do modo automático (estado local da UI)
     uint8_t    screen_brightness_pct;// indicador de brilho da tela (estado local da UI)
     ui_lang_t  lang;                 // idioma selecionado
