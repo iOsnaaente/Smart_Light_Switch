@@ -4,6 +4,12 @@ import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
 
+/// Duration/curve shared by the gauges below so a backend reading never just
+/// "pops" into place — it glides from the previous value to the new one,
+/// which is what actually reads as fluid when polling refreshes every ~500ms.
+const _gaugeAnimDuration = Duration(milliseconds: 450);
+const _gaugeAnimCurve = Curves.easeOut;
+
 /// Circular gauge showing the measured lux against the setpoint
 /// (mirrors the wireframe `Dial`). Sweeps 270° starting at the
 /// bottom-left, like a dashboard gauge.
@@ -25,13 +31,23 @@ class LuxGauge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final target = percent.clamp(0, 100).toDouble();
+    final numericBig = double.tryParse(big);
+    final bigStyle = TextStyle(
+      fontSize: size * 0.21,
+      fontWeight: FontWeight.w800,
+      color: AppColors.ink,
+      height: 1,
+      letterSpacing: -0.5,
+    );
+
     return SizedBox(
       width: size,
       height: size,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          if (percent > 0)
+          if (target > 0)
             Container(
               width: size * 0.68,
               height: size * 0.68,
@@ -42,23 +58,27 @@ class LuxGauge extends StatelessWidget {
                 ),
               ),
             ),
-          CustomPaint(
-            size: Size(size, size),
-            painter: _GaugePainter(percent: percent),
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: target, end: target),
+            duration: _gaugeAnimDuration,
+            curve: _gaugeAnimCurve,
+            builder: (context, animatedPercent, _) => CustomPaint(
+              size: Size(size, size),
+              painter: _GaugePainter(percent: animatedPercent),
+            ),
           ),
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                big,
-                style: TextStyle(
-                  fontSize: size * 0.21,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.ink,
-                  height: 1,
-                  letterSpacing: -0.5,
-                ),
-              ),
+              if (numericBig != null)
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: numericBig, end: numericBig),
+                  duration: _gaugeAnimDuration,
+                  curve: _gaugeAnimCurve,
+                  builder: (context, animatedValue, _) => Text(animatedValue.round().toString(), style: bigStyle),
+                )
+              else
+                Text(big, style: bigStyle),
               const SizedBox(height: 2),
               Text(unit, style: const TextStyle(fontSize: 11.5, color: AppColors.ink2, fontWeight: FontWeight.w500)),
               if (caption.isNotEmpty) ...[
@@ -124,17 +144,34 @@ class MiniLuxGauge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final target = percent.clamp(0, 100).toDouble();
+    final numericBig = double.tryParse(big);
+    const bigStyle = TextStyle(fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: -0.3);
+
     return SizedBox(
       width: size,
       height: size,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          CustomPaint(
-            size: Size(size, size),
-            painter: _GaugePainter(percent: percent, strokeWidth: 6, inset: 8),
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: target, end: target),
+            duration: _gaugeAnimDuration,
+            curve: _gaugeAnimCurve,
+            builder: (context, animatedPercent, _) => CustomPaint(
+              size: Size(size, size),
+              painter: _GaugePainter(percent: animatedPercent, strokeWidth: 6, inset: 8),
+            ),
           ),
-          Text(big, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: -0.3)),
+          if (numericBig != null)
+            TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: numericBig, end: numericBig),
+              duration: _gaugeAnimDuration,
+              curve: _gaugeAnimCurve,
+              builder: (context, animatedValue, _) => Text(animatedValue.round().toString(), style: bigStyle),
+            )
+          else
+            Text(big, style: bigStyle),
         ],
       ),
     );

@@ -36,13 +36,13 @@ class DeviceListTile extends StatelessWidget {
                     children: [
                       StatusChip(
                         label: device.online ? 'online' : 'OFFLINE',
-                        tone: device.online ? ChipTone.plain : ChipTone.off,
+                        tone: device.online ? ChipTone.ok : ChipTone.off,
                         withDot: true,
                       ),
                       const SizedBox(width: 5),
                       StatusChip(
                         label: device.automaticMode ? 'Automático' : 'Manual',
-                        tone: device.automaticMode ? ChipTone.on : ChipTone.plain,
+                        tone: device.automaticMode ? ChipTone.on : ChipTone.cool,
                       ),
                     ],
                   ),
@@ -98,7 +98,7 @@ class DeviceGridCard extends StatelessWidget {
               const SizedBox(height: 1),
               Text(device.room, style: const TextStyle(fontSize: 10.5, color: AppColors.ink2, fontWeight: FontWeight.w500)),
               const SizedBox(height: 9),
-              StatusChip(label: device.automaticMode ? 'Automático' : 'Manual', tone: device.automaticMode ? ChipTone.on : ChipTone.plain),
+              StatusChip(label: device.automaticMode ? 'Automático' : 'Manual', tone: device.automaticMode ? ChipTone.on : ChipTone.cool),
             ],
           ),
         ),
