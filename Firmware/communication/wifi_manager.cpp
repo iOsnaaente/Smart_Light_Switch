@@ -25,7 +25,7 @@ static const char *TAG = "WIFI_MANAGER";
 #define WIFI_CFG_KEY_PASS       "pass"
 #define WIFI_CFG_KEY_UID        "uid"
 
-#define WIFI_MAX_RETRY_BEFORE_AP    6
+#define WIFI_MAX_RETRY_BEFORE_BLE_FALLBACK    6
 #define WIFI_BACKOFF_BASE_MS        1000
 #define WIFI_BACKOFF_MAX_MS         60000
 
@@ -34,7 +34,6 @@ static bool s_initialized = false;
 static bool s_started = false;
 
 static esp_netif_t *s_sta_netif = nullptr;
-static esp_netif_t *s_ap_netif = nullptr;
 
 static EventGroupHandle_t s_event_group = nullptr;
 static const int WIFI_CONNECTED_BIT = BIT0;
@@ -70,40 +69,15 @@ static void reconnect_timer_cb(void *arg) {
     esp_wifi_connect();
 }
 
-static void start_ap_fallback(void) {
-    if (!s_config.start_ap_fallback || s_state == WIFI_MANAGER_STATE_AP_FALLBACK) {
+static void start_ble_fallback(void) {
+    if (!s_config.enable_ble_fallback || s_state == WIFI_MANAGER_STATE_BLE_FALLBACK) {
         return;
     }
 
-    ESP_LOGW(TAG, "Falhas consecutivas de reconexão: subindo AP de emergência '%s'", s_config.ap_ssid ? s_config.ap_ssid : "");
-    s_state = WIFI_MANAGER_STATE_AP_FALLBACK;
-
-    if (s_ap_netif == nullptr) {
-        s_ap_netif = esp_netif_create_default_wifi_ap();
-    }
-
-    wifi_config_t ap_cfg = {};
-    const char *ssid = s_config.ap_ssid ? s_config.ap_ssid : "SmartLight-Setup";
-    const char *pass = s_config.ap_pass ? s_config.ap_pass : "";
-
-    strncpy((char *)ap_cfg.ap.ssid, ssid, sizeof(ap_cfg.ap.ssid) - 1);
-    ap_cfg.ap.ssid_len = strlen(ssid);
-    ap_cfg.ap.channel = 1;
-    ap_cfg.ap.max_connection = 4;
-
-    if (strlen(pass) >= 8) {
-        strncpy((char *)ap_cfg.ap.password, pass, sizeof(ap_cfg.ap.password) - 1);
-        ap_cfg.ap.authmode = WIFI_AUTH_WPA2_PSK;
-    } else {
-        ap_cfg.ap.authmode = WIFI_AUTH_OPEN;
-    }
-
-    esp_wifi_set_mode(WIFI_MODE_APSTA);
-    esp_wifi_set_config(WIFI_IF_AP, &ap_cfg);
+    ESP_LOGW(TAG, "Falhas consecutivas de reconexão: reabrindo provisionamento BLE (STA continua tentando em segundo plano)");
+    s_state = WIFI_MANAGER_STATE_BLE_FALLBACK;
 
     publish_net_status(false);
-
-    /* Reabre o provisionamento BLE para que o usuário possa enviar novas credenciais. */
     ble_setup_start();
 }
 
@@ -127,8 +101,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
                     publish_net_status(false);
                 }
 
-                if (s_state == WIFI_MANAGER_STATE_AP_FALLBACK) {
-                    /* Já estamos no modo de emergência; continua tentando em segundo plano. */
+                if (s_state == WIFI_MANAGER_STATE_BLE_FALLBACK) {
+                    /* Já estamos no modo de provisionamento BLE; continua tentando o STA em segundo plano. */
                     s_retry_count++;
                     uint32_t delay_ms = backoff_delay_ms(s_retry_count);
                     esp_timer_stop(s_reconnect_timer);
@@ -139,13 +113,13 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
                 s_state = WIFI_MANAGER_STATE_CONNECTING;
                 s_retry_count++;
 
-                if (s_retry_count >= WIFI_MAX_RETRY_BEFORE_AP) {
-                    start_ap_fallback();
+                if (s_retry_count >= WIFI_MAX_RETRY_BEFORE_BLE_FALLBACK) {
+                    start_ble_fallback();
                     break;
                 }
 
                 uint32_t delay_ms = backoff_delay_ms(s_retry_count);
-                ESP_LOGI(TAG, "Reconectando em %u ms (tentativa %u/%u)", (unsigned)delay_ms, (unsigned)s_retry_count, (unsigned)WIFI_MAX_RETRY_BEFORE_AP);
+                ESP_LOGI(TAG, "Reconectando em %u ms (tentativa %u/%u)", (unsigned)delay_ms, (unsigned)s_retry_count, (unsigned)WIFI_MAX_RETRY_BEFORE_BLE_FALLBACK);
                 esp_timer_stop(s_reconnect_timer);
                 esp_timer_start_once(s_reconnect_timer, (uint64_t)delay_ms * 1000ULL);
                 break;
@@ -166,6 +140,14 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
             xEventGroupSetBits(s_event_group, WIFI_CONNECTED_BIT);
             publish_net_status(true);
+
+            /* Não encerramos o BLE aqui de forma incondicional: se a conexão
+             * foi recuperada por uma tentativa em segundo plano enquanto o
+             * provisionamento estava aberto (WIFI_MANAGER_STATE_BLE_FALLBACK),
+             * ble_setup pode estar no meio de notificar o app sobre um
+             * resultado de provisionamento — quem decide encerrar o rádio BLE
+             * é sempre o próprio ble_setup (ble_setup_stop), depois de
+             * concluir a notificação via GATT. */
         }
     }
 }

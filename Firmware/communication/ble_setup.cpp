@@ -22,24 +22,22 @@
 
 static const char *TAG = "BLE_SETUP";
 
-#define BLE_PROV_APP_ID             0x40
-#define BLE_PROV_SVC_INST_ID        0
-#define BLE_PROV_CHAR_VAL_LEN_MAX   256
-#define BLE_PROV_WIFI_TEST_TIMEOUT_MS  20000
+#define BLE_PROV_APP_ID                 0x40
+#define BLE_PROV_SVC_INST_ID            0
+#define BLE_PROV_CHAR_VAL_LEN_MAX       256
+#define BLE_PROV_WIFI_TEST_TIMEOUT_MS   20000
+#define BLE_PROV_MFG_COMPANY_ID         0xFFFF
 
-/* UUIDs 128-bit customizados (representação em little-endian / "byte order do ar")
- * Service:  7a0a0001-cd11-4ab5-9c7c-1122d3e4f5a6
- * Cred:     7a0a0002-cd11-4ab5-9c7c-1122d3e4f5a6
- * Status:   7a0a0003-cd11-4ab5-9c7c-1122d3e4f5a6 */
-static uint8_t s_service_uuid[ESP_UUID_LEN_128] = {
-    0xa6, 0xf5, 0xe4, 0xd3, 0x22, 0x11, 0x7c, 0x9c, 0xb5, 0x4a, 0x11, 0xcd, 0x01, 0x00, 0x0a, 0x7a,
-};
-static uint8_t s_char_cred_uuid[ESP_UUID_LEN_128] = {
-    0xa6, 0xf5, 0xe4, 0xd3, 0x22, 0x11, 0x7c, 0x9c, 0xb5, 0x4a, 0x11, 0xcd, 0x02, 0x00, 0x0a, 0x7a,
-};
-static uint8_t s_char_status_uuid[ESP_UUID_LEN_128] = {
-    0xa6, 0xf5, 0xe4, 0xd3, 0x22, 0x11, 0x7c, 0x9c, 0xb5, 0x4a, 0x11, 0xcd, 0x03, 0x00, 0x0a, 0x7a,
-};
+
+/** 
+ * @brief UUIDs 16-bit customizados 
+ * Service:  0x1205
+ * Cred:     0x010A
+ * Status:   0x020B 
+ */
+static uint16_t s_service_uuid      = 0x1205;
+static uint16_t s_char_cred_uuid    = 0x010A;
+static uint16_t s_char_status_uuid  = 0x020B;
 
 enum {
     IDX_SVC = 0,
@@ -59,32 +57,82 @@ static const uint8_t  char_prop_read_notify         = ESP_GATT_CHAR_PROP_BIT_REA
 static const uint8_t  ccc_default[2]                = {0x00, 0x00};
 static const char     status_idle_json[]            = "{\"status\":\"idle\"}";
 
+
 #define CHAR_DECLARATION_SIZE (sizeof(uint8_t))
 
 static const esp_gatts_attr_db_t s_gatt_db[BLE_PROV_IDX_NB] = {
-    [IDX_SVC] =
-        {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&primary_service_uuid, ESP_GATT_PERM_READ,
-          sizeof(s_service_uuid), sizeof(s_service_uuid), s_service_uuid}},
+    [IDX_SVC] = {
+        {ESP_GATT_AUTO_RSP}, 
+        {
+            ESP_UUID_LEN_16, 
+            (uint8_t *)&primary_service_uuid, 
+            ESP_GATT_PERM_READ,
+            sizeof(s_service_uuid),
+            sizeof(s_service_uuid),
+            (uint8_t *)&s_service_uuid
+        }
+    },
 
     [IDX_CHAR_CRED_DECL] =
-        {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
+        {{ESP_GATT_AUTO_RSP}, {
+            ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
           CHAR_DECLARATION_SIZE, CHAR_DECLARATION_SIZE, (uint8_t *)&char_prop_write}},
 
-    [IDX_CHAR_CRED_VAL] =
-        {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_128, s_char_cred_uuid, ESP_GATT_PERM_WRITE,
-          BLE_PROV_CHAR_VAL_LEN_MAX, 0, NULL}},
+    [IDX_CHAR_CRED_VAL] = {
+        { ESP_GATT_AUTO_RSP }, 
+        {
+            ESP_UUID_LEN_16, 
+            (uint8_t *)&s_char_cred_uuid, 
+            ESP_GATT_PERM_WRITE,
+            BLE_PROV_CHAR_VAL_LEN_MAX, 
+            0, 
+            NULL
+        }
+    },
 
-    [IDX_CHAR_STATUS_DECL] =
-        {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
-          CHAR_DECLARATION_SIZE, CHAR_DECLARATION_SIZE, (uint8_t *)&char_prop_read_notify}},
+    [IDX_CHAR_STATUS_DECL] = {
+        { ESP_GATT_AUTO_RSP }, 
+        {
+            ESP_UUID_LEN_16, 
+            (uint8_t *)&character_declaration_uuid, 
+            ESP_GATT_PERM_READ,
+            CHAR_DECLARATION_SIZE, 
+            CHAR_DECLARATION_SIZE,  
+            (uint8_t *)&char_prop_read_notify
+        }
+    },
 
-    [IDX_CHAR_STATUS_VAL] =
-        {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_128, s_char_status_uuid, ESP_GATT_PERM_READ,
-          BLE_PROV_CHAR_VAL_LEN_MAX, sizeof(status_idle_json) - 1, (uint8_t *)status_idle_json}},
+    [IDX_CHAR_STATUS_VAL] = {
+        { ESP_GATT_AUTO_RSP }, 
+        {
+            ESP_UUID_LEN_16,
+            (uint8_t *)&s_char_status_uuid,
+            ESP_GATT_PERM_READ,
+            BLE_PROV_CHAR_VAL_LEN_MAX, 
+            sizeof(status_idle_json) - 1, 
+            (uint8_t *)status_idle_json
+        }
+    },
 
-    [IDX_CHAR_STATUS_CFG] =
-        {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&character_client_config_uuid, ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
-          sizeof(uint16_t), sizeof(ccc_default), (uint8_t *)ccc_default}},
+    [IDX_CHAR_STATUS_CFG] = {
+        { ESP_GATT_AUTO_RSP }, 
+        {
+            ESP_UUID_LEN_16, 
+            (uint8_t *)&character_client_config_uuid, 
+            ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
+            sizeof(uint16_t), 
+            sizeof(ccc_default), 
+            (uint8_t *)ccc_default
+        }
+    },
+};
+
+
+/* Manufacturer data fixo do pacote de advertising principal.
+ * Sem prefixo de company_id: junto com o nome do dispositivo
+ * (ver s_adv_data) já preenche os 31 bytes do ADV legado. */
+static const uint8_t s_adv_mfg_data[] = {
+    'B', 'r', 'u', 'n', 'o', 'S', 'a', 'm', 'p', 'a', 'i', 'o',
 };
 
 static esp_ble_adv_params_t s_adv_params = {
@@ -100,16 +148,18 @@ static esp_ble_adv_data_t s_adv_data = {
     .set_scan_rsp        = false,
     .include_name        = true,
     .include_txpower     = false,
-    .min_interval        = 0x20,
-    .max_interval        = 0x40,
+    .min_interval        = 0x00,
+    .max_interval        = 0x00,
     .appearance          = 0x00,
-    .manufacturer_len    = 0,
-    .p_manufacturer_data = NULL,
+    .manufacturer_len    = sizeof(s_adv_mfg_data),
+    .p_manufacturer_data = (uint8_t *)s_adv_mfg_data,
     .service_data_len    = 0,
     .p_service_data      = NULL,
     .service_uuid_len    = 0,
     .p_service_uuid      = NULL,
-    .flag                = (ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT),
+    /* Flags AD fica de fora: nome + manufacturer data já usam
+     * os 31 bytes do ADV legado (flags ocupariam mais 3). */
+    .flag                = 0,
 };
 
 static uint16_t s_handle_table[BLE_PROV_IDX_NB];
@@ -126,7 +176,6 @@ static char s_device_id[24];
  * Bluetooth SIG) para que apps possam filtrar dispositivos pelo ID já no
  * resultado do scan, sem precisar conectar primeiro. Preenchido em
  * ble_setup_init(), depois que device_identity_get_id() resolve s_device_id. */
-#define BLE_PROV_MFG_COMPANY_ID 0xFFFF
 
 static uint8_t  s_scan_rsp_mfg_data[2 + sizeof(s_device_id)];
 static uint16_t s_scan_rsp_mfg_len = 0;
@@ -162,14 +211,13 @@ static void update_status_value(const char *status, bool include_device_id) {
     } else {
         snprintf(json, sizeof(json), "{\"status\":\"%s\"}", status);
     }
-
     esp_ble_gatts_set_attr_value(s_handle_table[IDX_CHAR_STATUS_VAL], strlen(json), (const uint8_t *)json);
-
     if (s_notify_enabled && s_gatts_if != ESP_GATT_IF_NONE && s_conn_id != 0xFFFF) {
-        esp_ble_gatts_send_indicate(s_gatts_if, s_conn_id, s_handle_table[IDX_CHAR_STATUS_VAL],
-                                    strlen(json), (uint8_t *)json, false);
+        esp_ble_gatts_send_indicate(
+            s_gatts_if, s_conn_id, s_handle_table[IDX_CHAR_STATUS_VAL],
+            strlen(json), (uint8_t *)json, false
+        );
     }
-
     ESP_LOGI(TAG, "Status de provisionamento: %s", json);
 }
 
@@ -180,21 +228,17 @@ static void post_provision_status(bool active) {
 
 static void provisioning_task(void *arg) {
     ble_prov_credentials_t *creds = (ble_prov_credentials_t *)arg;
-
     update_status_value("connecting", false);
-
     esp_err_t err = wifi_manager_connect_with(creds->ssid, creds->password, BLE_PROV_WIFI_TEST_TIMEOUT_MS);
     if (err == ESP_OK) {
         wifi_manager_save_credentials(creds->ssid, creds->password, creds->user_id);
         update_status_value("connected", true);
-
         /* Dá tempo para o app ler/receber a notificação antes de encerrar o BLE. */
         vTaskDelay(pdMS_TO_TICKS(2500));
         ble_setup_stop();
     } else {
         update_status_value("failed", false);
     }
-
     free(creds);
     vTaskDelete(NULL);
 }
@@ -203,50 +247,40 @@ static void handle_credentials_write(const uint8_t *value, uint16_t len) {
     if (value == nullptr || len == 0) {
         return;
     }
-
     char *buf = (char *)malloc(len + 1);
     if (buf == nullptr) {
         return;
     }
     memcpy(buf, value, len);
     buf[len] = '\0';
-
     cJSON *root = cJSON_Parse(buf);
     free(buf);
-
     if (root == nullptr) {
         ESP_LOGW(TAG, "Payload de credenciais não é um JSON válido");
         update_status_value("failed", false);
         return;
     }
-
     const cJSON *ssid_item = cJSON_GetObjectItemCaseSensitive(root, "ssid");
     const cJSON *pass_item = cJSON_GetObjectItemCaseSensitive(root, "password");
     const cJSON *uid_item  = cJSON_GetObjectItemCaseSensitive(root, "user_id");
-
     if (!cJSON_IsString(ssid_item) || ssid_item->valuestring[0] == '\0') {
         ESP_LOGW(TAG, "JSON de credenciais sem 'ssid' válido");
         cJSON_Delete(root);
         update_status_value("failed", false);
         return;
     }
-
     ble_prov_credentials_t *creds = (ble_prov_credentials_t *)calloc(1, sizeof(ble_prov_credentials_t));
     if (creds == nullptr) {
         cJSON_Delete(root);
         return;
     }
-
     strncpy(creds->ssid, ssid_item->valuestring, sizeof(creds->ssid) - 1);
     if (cJSON_IsString(pass_item)) {
         strncpy(creds->password, pass_item->valuestring, sizeof(creds->password) - 1);
     }
     creds->user_id = cJSON_IsNumber(uid_item) ? (int32_t)uid_item->valuedouble : 0;
-
     cJSON_Delete(root);
-
     ESP_LOGI(TAG, "Credenciais recebidas via BLE: SSID='%s' user_id=%d", creds->ssid, (int)creds->user_id);
-
     if (xTaskCreate(provisioning_task, "ble_prov_task", 6144, creds, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Falha ao criar task de provisionamento");
         free(creds);
@@ -292,12 +326,10 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "Falha ao definir nome do dispositivo: %s", esp_err_to_name(err));
             }
-
             err = esp_ble_gap_config_adv_data(&s_adv_data);
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "Falha ao configurar adv data: %s", esp_err_to_name(err));
             }
-
             err = esp_ble_gatts_create_attr_tab(s_gatt_db, gatts_if, BLE_PROV_IDX_NB, BLE_PROV_SVC_INST_ID);
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "Falha ao criar tabela de atributos: %s", esp_err_to_name(err));
@@ -309,8 +341,9 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
             if (param->add_attr_tab.status != ESP_GATT_OK) {
                 ESP_LOGE(TAG, "Criação da tabela de atributos falhou: 0x%x", param->add_attr_tab.status);
             } else if (param->add_attr_tab.num_handle != BLE_PROV_IDX_NB) {
-                ESP_LOGE(TAG, "Número de handles inesperado: %d (esperado %d)",
-                         param->add_attr_tab.num_handle, BLE_PROV_IDX_NB);
+                ESP_LOGE(
+                    TAG, "Número de handles inesperado: %d (esperado %d)",
+                    param->add_attr_tab.num_handle, BLE_PROV_IDX_NB);
             } else {
                 memcpy(s_handle_table, param->add_attr_tab.handles, sizeof(s_handle_table));
                 esp_ble_gatts_start_service(s_handle_table[IDX_SVC]);

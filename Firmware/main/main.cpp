@@ -197,8 +197,6 @@ extern "C" void app_main(void) {
     comm_cfg.mqtt_broker_uri = MQTT_BROKER_URI;
     comm_cfg.mqtt_username = MQTT_USERNAME;
     comm_cfg.mqtt_password = MQTT_PASSWORD;
-    comm_cfg.wifi_ap_fallback_ssid = WIFI_AP_FALLBACK_SSID;
-    comm_cfg.wifi_ap_fallback_pass = WIFI_AP_FALLBACK_PASS;
     err = comm_manager_init(&comm_cfg);
     if (err != ESP_OK) {
         ESP_LOGE( TAG, "Falha ao inicializar o comm_manager: %s", esp_err_to_name(err));
