@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import '../models/device.dart';
 import '../models/device_models.dart';
 
-const String _defaultBaseUrl = 'http://localhost:8000';
+const String _defaultBaseUrl = 'http://159.223.128.43:8000';
 
 class ApiException implements Exception {
   final String message;
