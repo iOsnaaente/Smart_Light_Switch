@@ -157,6 +157,14 @@ void screen_settings_create(screen_settings_t *out) {
     lv_obj_t *wifi_value_label = row_value_create(wifi_right, "—");
     row_chevron_create(wifi_right);
 
+    // Potência — mesma leitura (event_bus POWER_UPDATE) que alimenta a
+    // telemetria MQTT do backend; só exibição, sem toque.
+    lv_obj_t *power_row, *power_lead, *power_right;
+    row_create(body, false, &power_row, &power_lead, &power_right);
+    ui_icon_bulb_create(power_lead, 16, ui_color_muted());
+    lv_obj_t *power_label = row_label_create(power_lead, s->power);
+    lv_obj_t *power_value_label = row_value_create(power_right, "0.0 W");
+
     // Sobre — versão fixa do firmware; última linha (sem hairline / "last")
     lv_obj_t *about_row, *about_lead, *about_right;
     row_create(body, true, &about_row, &about_lead, &about_right);
@@ -175,6 +183,8 @@ void screen_settings_create(screen_settings_t *out) {
     out->wifi_label          = wifi_label;
     out->wifi_value_label    = wifi_value_label;
     out->wifi_row            = wifi_row;
+    out->power_label         = power_label;
+    out->power_value_label   = power_value_label;
     out->about_label         = about_label;
 }
 
@@ -201,6 +211,9 @@ void screen_settings_update(const screen_settings_t *screen, const ui_runtime_st
     } else {
         lv_label_set_text(screen->wifi_value_label, state->wifi_connected ? state->ip_addr : s->disconnected);
     }
+
+    lv_label_set_text(screen->power_label, s->power);
+    lv_label_set_text_fmt(screen->power_value_label, "%.1f W", state->active_power_w);
 
     lv_label_set_text(screen->about_label, s->about);
 }

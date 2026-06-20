@@ -234,6 +234,18 @@ static void on_setpoint_changed(void *handler_arg, esp_event_base_t base, int32_
     lvgl_port_unlock();
 }
 
+static void on_power_update(void *handler_arg, esp_event_base_t base, int32_t id, void *event_data) {
+    event_power_update_t *evt = (event_power_update_t *)event_data;
+    if (!lvgl_port_lock(100)) {
+        return;
+    }
+    // Mesma fonte (event_bus POWER_UPDATE) que mqtt_client.cpp usa pra
+    // alimentar a telemetria do backend — UI e backend sempre em sincronia.
+    s_state.active_power_w = evt->active_power_w;
+    refresh_all_screens();
+    lvgl_port_unlock();
+}
+
 static void on_ble_provision_status(void *handler_arg, esp_event_base_t base, int32_t id, void *event_data) {
     event_ble_provision_status_t *evt = (event_ble_provision_status_t *)event_data;
     if (!lvgl_port_lock(100)) {
@@ -313,6 +325,7 @@ esp_err_t ui_manager_init(void) {
     event_bus_register(SMART_SWITCH_EVENT_DIMMER_UPDATE,        &on_dimmer_update,        nullptr);
     event_bus_register(SMART_SWITCH_EVENT_MODE_CHANGED,         &on_mode_changed,         nullptr);
     event_bus_register(SMART_SWITCH_EVENT_SETPOINT_CHANGED,     &on_setpoint_changed,     nullptr);
+    event_bus_register(SMART_SWITCH_EVENT_POWER_UPDATE,         &on_power_update,         nullptr);
     event_bus_register(SMART_SWITCH_EVENT_NET_STATUS,           &on_net_status,           nullptr);
     event_bus_register(SMART_SWITCH_EVENT_BLE_PROVISION_STATUS, &on_ble_provision_status, nullptr);
 

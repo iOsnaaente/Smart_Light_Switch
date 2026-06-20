@@ -34,6 +34,9 @@ typedef struct {
     lv_obj_t *wifi_value_label; // IP atual (conectado) ou "—" (desconectado)
     lv_obj_t *wifi_row;         // toque -> detalhes de rede
 
+    lv_obj_t *power_label;       // "Potência"/"Power"
+    lv_obj_t *power_value_label; // potência ativa atual (mesma fonte do backend: event_bus POWER_UPDATE)
+
     lv_obj_t *about_label;      // "Sobre"/"About" (versão é texto fixo do firmware)
 } screen_settings_t;
 

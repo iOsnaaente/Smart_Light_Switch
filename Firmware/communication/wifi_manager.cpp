@@ -29,6 +29,21 @@ static const char *TAG = "WIFI_MANAGER";
 #define WIFI_BACKOFF_BASE_MS        1000
 #define WIFI_BACKOFF_MAX_MS         60000
 
+/* Relatos de fórum: alguns ESP32 falham a autenticação 802.11 (reason=2,
+ * AUTH_EXPIRE) mesmo com sinal forte, e reduzir a potência de TX "conserta"
+ * — possível efeito do front-end de RF saturando o receptor do AP a curta
+ * distância. Ajuste entre 5 e 8 dBm se ainda falhar. */
+#define WIFI_TX_POWER_LIMIT_DBM     8
+
+static void apply_tx_power_limit(void) {
+    esp_err_t err = esp_wifi_set_max_tx_power(WIFI_TX_POWER_LIMIT_DBM * 4 /* unidades de 0.25dBm */);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Potência de TX limitada a %d dBm", WIFI_TX_POWER_LIMIT_DBM);
+    } else {
+        ESP_LOGW(TAG, "Falha ao limitar potência de TX: %s", esp_err_to_name(err));
+    }
+}
+
 static wifi_manager_config_t s_config = {};
 static bool s_initialized = false;
 static bool s_started = false;
@@ -95,6 +110,9 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
                 bool was_connected = (s_state == WIFI_MANAGER_STATE_CONNECTED);
                 xEventGroupClearBits(s_event_group, WIFI_CONNECTED_BIT);
                 strncpy(s_last_ip, "0.0.0.0", sizeof(s_last_ip));
+
+                auto *disc = (wifi_event_sta_disconnected_t *)event_data;
+                ESP_LOGW(TAG, "Wi-Fi desconectado, reason=%d", disc->reason);
 
                 if (was_connected) {
                     ESP_LOGW(TAG, "Conexão Wi-Fi perdida");
@@ -249,6 +267,7 @@ esp_err_t wifi_manager_start(void) {
     }
 
     s_started = true;
+    apply_tx_power_limit();
     ESP_LOGI(TAG, "Conectando ao SSID '%s'...", ssid);
     return ESP_OK;
 }
@@ -369,12 +388,63 @@ esp_err_t wifi_manager_load_user_id(int32_t *out_user_id) {
     return err;
 }
 
+/* Faz um scan ativo e loga canal/RSSI/authmode do AP alvo antes de tentar
+ * conectar — ajuda a distinguir "AP fora de alcance/só 5GHz" de "senha
+ * errada" quando a conexão falha (ESP32-C3 só tem rádio 2.4GHz). */
+static void log_ap_diagnostics(const char *target_ssid) {
+    if (esp_wifi_scan_start(nullptr, true) != ESP_OK) {
+        ESP_LOGW(TAG, "Scan de diagnóstico falhou ao iniciar");
+        return;
+    }
+
+    uint16_t ap_count = 0;
+    esp_wifi_scan_get_ap_num(&ap_count);
+    if (ap_count == 0) {
+        ESP_LOGW(TAG, "Scan de diagnóstico: nenhuma rede visível");
+        return;
+    }
+
+    auto *records = (wifi_ap_record_t *)malloc(sizeof(wifi_ap_record_t) * ap_count);
+    if (records == nullptr) {
+        return;
+    }
+    if (esp_wifi_scan_get_ap_records(&ap_count, records) == ESP_OK) {
+        bool found = false;
+        for (int i = 0; i < ap_count; i++) {
+            if (strcmp((const char *)records[i].ssid, target_ssid) == 0) {
+                found = true;
+                ESP_LOGI(
+                    TAG, "Scan: AP '%s' visível - canal=%d rssi=%d authmode=%d",
+                    target_ssid, records[i].primary, records[i].rssi, (int)records[i].authmode);
+            }
+        }
+        if (!found) {
+            ESP_LOGW(
+                TAG, "Scan: AP '%s' NÃO encontrado entre %d rede(s) visível(eis) (fora de alcance ou só 5GHz?)",
+                target_ssid, (int)ap_count);
+        }
+    }
+    free(records);
+}
+
 esp_err_t wifi_manager_connect_with(const char *ssid, const char *password, uint32_t timeout_ms) {
     if (!s_initialized || ssid == nullptr) {
         return ESP_ERR_INVALID_ARG;
     }
 
     ESP_LOGI(TAG, "Testando conexão com SSID '%s'...", ssid);
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    if (!s_started) {
+        esp_err_t err = esp_wifi_start();
+        if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
+            return err;
+        }
+        s_started = true;
+        apply_tx_power_limit();
+    }
+    esp_wifi_disconnect();
+    log_ap_diagnostics(ssid);
 
     wifi_config_t wifi_cfg = {};
     strncpy((char *)wifi_cfg.sta.ssid, ssid, sizeof(wifi_cfg.sta.ssid) - 1);
@@ -385,19 +455,8 @@ esp_err_t wifi_manager_connect_with(const char *ssid, const char *password, uint
     s_retry_count = 0;
     s_state = WIFI_MANAGER_STATE_CONNECTING;
 
-    esp_wifi_disconnect();
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg));
-
-    if (!s_started) {
-        esp_err_t err = esp_wifi_start();
-        if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
-            return err;
-        }
-        s_started = true;
-    } else {
-        esp_wifi_connect();
-    }
+    esp_wifi_connect();
 
     EventBits_t bits = xEventGroupWaitBits(s_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdTRUE, pdMS_TO_TICKS(timeout_ms));
     if (bits & WIFI_CONNECTED_BIT) {
