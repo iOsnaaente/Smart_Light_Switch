@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import '../models/device.dart';
 import '../models/device_models.dart';
 
-const String _defaultBaseUrl = 'http://localhost:8000';
+const String _defaultBaseUrl = 'http://159.223.128.43:8000';
 
 class ApiException implements Exception {
   final String message;
@@ -24,6 +24,7 @@ class ApiClient {
   final String baseUrl;
   String? username;
   String? password;
+  int? userId;
 
   ApiClient({String? baseUrl})
       : baseUrl = baseUrl ??
@@ -59,6 +60,7 @@ class ApiClient {
     if (success) {
       this.username = username;
       this.password = password;
+      userId = body['user_id'] as int?;
     }
     return success;
   }
@@ -66,6 +68,7 @@ class ApiClient {
   void logout() {
     username = null;
     password = null;
+    userId = null;
   }
 
   /* ---- dispositivos --------------------------------------------------------- */

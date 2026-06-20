@@ -4,9 +4,11 @@ import 'package:provider/provider.dart';
 import '../../core/routes/app_routes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/device.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/device_provider.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/device_card.dart';
+import '../../widgets/device_scan_dialog.dart';
 
 class DevicesPage extends StatefulWidget {
   const DevicesPage({super.key});
@@ -29,6 +31,25 @@ class _DevicesPageState extends State<DevicesPage> {
 
   void _openDevice(Device device) {
     Navigator.pushNamed(context, AppRoutes.control, arguments: device.id);
+  }
+
+  Future<void> _openScanDialog() async {
+    final provisioned = await DeviceScanDialog.show(context);
+    if (provisioned && mounted) {
+      context.read<DeviceProvider>().loadDevices();
+    }
+  }
+
+  void _onMenuSelected(String value) {
+    switch (value) {
+      case 'scan':
+        _openScanDialog();
+        break;
+      case 'logout':
+        context.read<AuthProvider>().logout();
+        Navigator.of(context).pushNamedAndRemoveUntil(AppRoutes.login, (route) => false);
+        break;
+    }
   }
 
   Future<void> _toggleRelay(Device device, bool value) async {
@@ -65,7 +86,35 @@ class _DevicesPageState extends State<DevicesPage> {
             padding: const EdgeInsets.fromLTRB(18, 8, 18, 6),
             child: Row(
               children: [
-                const RoundIconButton(icon: Icons.menu_rounded),
+                PopupMenuButton<String>(
+                  tooltip: '',
+                  offset: const Offset(0, 40),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  onSelected: _onMenuSelected,
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'scan',
+                      child: Row(
+                        children: [
+                          Icon(Icons.search_rounded, size: 18, color: AppColors.ink2),
+                          SizedBox(width: 10),
+                          Text('Procurar dispositivos'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'logout',
+                      child: Row(
+                        children: [
+                          Icon(Icons.logout_rounded, size: 18, color: AppColors.danger),
+                          SizedBox(width: 10),
+                          Text('Sair', style: TextStyle(color: AppColors.danger)),
+                        ],
+                      ),
+                    ),
+                  ],
+                  child: const RoundIconButton(icon: Icons.menu_rounded),
+                ),
                 Expanded(
                   child: Column(
                     children: [
@@ -135,9 +184,21 @@ class _DevicesPageState extends State<DevicesPage> {
             Padding(
               padding: const EdgeInsets.only(top: 40),
               child: Center(
-                child: Text(
-                  provider.devices.isEmpty ? 'nenhum dispositivo cadastrado ainda' : 'nada encontrado para "$_query"',
-                  style: const TextStyle(color: AppColors.ink2, fontWeight: FontWeight.w500),
+                child: Column(
+                  children: [
+                    Text(
+                      provider.devices.isEmpty ? 'nenhum dispositivo cadastrado ainda' : 'nada encontrado para "$_query"',
+                      style: const TextStyle(color: AppColors.ink2, fontWeight: FontWeight.w500),
+                    ),
+                    if (provider.devices.isEmpty) ...[
+                      const SizedBox(height: 14),
+                      OutlinedButton.icon(
+                        onPressed: _openScanDialog,
+                        icon: const Icon(Icons.search_rounded, size: 18),
+                        label: const Text('Procurar dispositivos próximos'),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
