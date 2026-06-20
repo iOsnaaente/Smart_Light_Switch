@@ -280,7 +280,10 @@ static void handle_credentials_write(const uint8_t *value, uint16_t len) {
     }
     creds->user_id = cJSON_IsNumber(uid_item) ? (int32_t)uid_item->valuedouble : 0;
     cJSON_Delete(root);
-    ESP_LOGI(TAG, "Credenciais recebidas via BLE: SSID='%s' user_id=%d", creds->ssid, (int)creds->user_id);
+    ESP_LOGI(
+        TAG, "Credenciais recebidas via BLE: SSID='%s' user_id=%d senha_len=%d",
+        creds->ssid, (int)creds->user_id, (int)strlen(creds->password)
+    );
     if (xTaskCreate(provisioning_task, "ble_prov_task", 6144, creds, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Falha ao criar task de provisionamento");
         free(creds);
