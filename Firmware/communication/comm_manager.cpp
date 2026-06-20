@@ -172,7 +172,7 @@ esp_err_t comm_manager_init(const comm_manager_config_t *config) {
             mqtt_cfg.mqtt_username = s_config.mqtt_username;
             mqtt_cfg.mqtt_password = s_config.mqtt_password;
             mqtt_cfg.state_heartbeat_ms = 30000;
-            mqtt_cfg.telemetry_interval_ms = 7000;
+            mqtt_cfg.telemetry_interval_ms = 500;
             err = mqtt_client_init(&mqtt_cfg);
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "Falha ao inicializar mqtt_client: %s", esp_err_to_name(err));
@@ -182,8 +182,9 @@ esp_err_t comm_manager_init(const comm_manager_config_t *config) {
     }
 
     s_initialized = true;
-    ESP_LOGI(TAG, "Comm manager inicializado (ble=%d mqtt=%d http=%d)",
-             (int)s_config.enable_ble, (int)s_config.enable_mqtt, (int)s_config.enable_http);
+    ESP_LOGI(
+        TAG, "Comm manager inicializado (ble=%d mqtt=%d http=%d)",
+        (int)s_config.enable_ble, (int)s_config.enable_mqtt, (int)s_config.enable_http);
     return ESP_OK;
 }
 
