@@ -7,6 +7,7 @@ import '../../core/routes/app_routes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/device.dart';
 import '../../providers/device_provider.dart';
+import '../../widgets/animated_icons.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/control_widgets.dart';
 import '../../widgets/dimmer_slider.dart';
@@ -140,8 +141,7 @@ class _ControlPageState extends State<ControlPage> {
         subtitle: device.room,
         leading: RoundIconButton(icon: Icons.chevron_left_rounded, onTap: () => Navigator.maybePop(context)),
         trailing: RoundIconButton(
-          icon: Icons.more_horiz_rounded,
-          color: AppColors.ink2,
+          child: const SettingsIcon(open: false, size: 20),
           onTap: () => Navigator.pushNamed(context, AppRoutes.settings, arguments: device.id),
         ),
       ),
@@ -185,7 +185,16 @@ class _OnlineBody extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
       children: [
-        Center(child: StatusChip.connection(online: true)),
+        Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ConnectionIcon(active: true, size: 22),
+              const SizedBox(width: 8),
+              StatusChip.connection(online: true),
+            ],
+          ),
+        ),
         const SizedBox(height: 14),
         ModeSegment(options: const ['Manual', 'Automático'], activeIndex: auto ? 1 : 0, onChanged: onModeChanged),
         const SizedBox(height: 16),
@@ -224,11 +233,23 @@ class _OnlineBody extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        DimmerSlider(
-          percent: dimmerOverride ?? device.dimmer.toDouble(),
-          label: auto ? 'Dimmer (automático)' : 'Dimmer da lâmpada',
-          muted: auto,
-          onChanged: auto ? null : onDimmerChanged,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: IntensityIcon(level: ((dimmerOverride ?? device.dimmer.toDouble()) / 100).clamp(0, 1), size: 30),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: DimmerSlider(
+                percent: dimmerOverride ?? device.dimmer.toDouble(),
+                label: auto ? 'Dimmer (automático)' : 'Dimmer da lâmpada',
+                muted: auto,
+                onChanged: auto ? null : onDimmerChanged,
+              ),
+            ),
+          ],
         ),
         if (auto)
           const Padding(
@@ -269,7 +290,16 @@ class _OfflineBody extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 8),
-          Center(child: StatusChip.connection(online: false, subtitle: 'visto ${device.lastSeen}')),
+          Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const ConnectionIcon(active: false, size: 22),
+                const SizedBox(width: 8),
+                StatusChip.connection(online: false, subtitle: 'visto ${device.lastSeen}'),
+              ],
+            ),
+          ),
           Expanded(
             child: Center(
               child: Column(

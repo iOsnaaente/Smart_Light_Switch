@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
 import '../models/device.dart';
+import 'animated_icons.dart';
 import 'lux_gauge.dart';
 import 'status_chip.dart';
 
@@ -50,6 +51,8 @@ class DeviceListTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
+            SmartLightBulbIcon(on: device.online && device.relayOn, size: 26),
+            const SizedBox(width: 6),
             SwitchToggle(value: device.online && device.relayOn, onChanged: device.online ? onToggle : null),
           ],
         ),

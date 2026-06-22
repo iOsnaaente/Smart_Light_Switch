@@ -4,11 +4,13 @@ import '../core/theme/app_theme.dart';
 
 /// Round, soft icon button used in app bars (mirrors the wireframe `IconBtn`).
 class RoundIconButton extends StatelessWidget {
-  final IconData icon;
+  final IconData? icon;
+  final Widget? child;
   final VoidCallback? onTap;
   final Color? color;
 
-  const RoundIconButton({super.key, required this.icon, this.onTap, this.color});
+  const RoundIconButton({super.key, this.icon, this.child, this.onTap, this.color})
+      : assert(icon != null || child != null, 'provide either icon or child');
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +26,7 @@ class RoundIconButton extends StatelessWidget {
         child: SizedBox(
           width: 34,
           height: 34,
-          child: Icon(icon, size: 17, color: color ?? AppColors.ink),
+          child: Center(child: child ?? Icon(icon, size: 17, color: color ?? AppColors.ink)),
         ),
       ),
     );
