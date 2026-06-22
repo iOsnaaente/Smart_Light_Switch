@@ -31,6 +31,11 @@ esp_err_t lvgl_port_start(void);
 bool lvgl_port_lock(uint32_t timeout_ms);
 void lvgl_port_unlock(void);
 
+// Retorna as últimas coordenadas BRUTAS do ADC do XPT2046 (valores de 12 bits,
+// antes de qualquer mapeamento INVERT_X/SWAP_XY). Útil para detectar zonas de
+// toque pela posição física real, independente da calibração lógica.
+void lvgl_port_get_raw_touch(int *xp, int *yp);
+
 #ifdef __cplusplus
 }
 #endif
