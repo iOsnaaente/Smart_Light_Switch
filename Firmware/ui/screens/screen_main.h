@@ -2,15 +2,18 @@
 
 #include "lvgl.h"
 #include "../ui_state.h"
-#include "../ui_widgets.h"
 
 /**
- * @brief   Tela principal — variante "MainC" do wireframe (cartão da sala com
- *          stepper de intensidade + cartões Natural/Alvo + botão de força).
+ * @brief   Tela principal — design "superfície de luz" (MainPage.html):
+ *          fundo escuro, camadas de gradiente azul (acionamento) e âmbar
+ *          (luz) reveladas de baixo para cima conforme a intensidade sobe,
+ *          barra superior com chip Wi-Fi + relógio + engrenagem, marcadores
+ *          de nível e readout centralizado com o valor em %.
  *
- * Expõe os widgets tocáveis para o ui_manager prender os event callbacks
- * (lv_obj_add_event_cb) e decidir o que cada toque significa — esta tela só
- * monta a árvore e redesenha o estado recebido (telas "burras", ui_state.h).
+ *          Gesto vertical: arraste → ajusta intensidade em tempo real.
+ *          Gesto horizontal (>60% da largura):
+ *            deslize esquerda → abre Ajustes
+ *            deslize direita  → desliga a lâmpada completamente
  */
 
 #ifdef __cplusplus
@@ -18,23 +21,34 @@ extern "C" {
 #endif
 
 typedef struct {
-    lv_obj_t *root;              // tela própria, alvo de lv_screen_load()
+    lv_obj_t *root;
 
-    lv_obj_t *status_bar;        // toque -> abrir tela de ajustes
-    lv_obj_t *status_wifi_label; // "conectado"/"—"
-    lv_obj_t *status_mode_dot;   // bolinha cor-de-destaque (visível só em modo automático)
-    lv_obj_t *status_mode_label; // "AUTO"/"MANUAL"
+    /* Camadas de gradiente (reveladas de baixo para cima) */
+    lv_obj_t *drive_layer;       // container azul; altura ∝ % de acionamento
+    lv_obj_t *drive_paint;       // gradiente LCD_HEIGHT px (clippado pela layer)
+    lv_obj_t *light_layer;       // container âmbar; altura ∝ % de intensidade
+    lv_obj_t *light_paint;       // gradiente LCD_HEIGHT px (clippado pela layer)
 
-    lv_obj_t *room_card;         // toque -> abrir tela de modo automático
-    lv_obj_t *room_label;        // nome do ambiente ("Sala de Estar"/"Living Room")
-    ui_stepper_t stepper;        // intensidade: btn_minus/value_label/btn_plus
+    /* Bloom no topo (opacidade ∝ intensidade) */
+    lv_obj_t *glow;
 
-    lv_obj_t *natural_caption;   // legenda do cartão "Natural" (texto fixo PT/EN)
-    lv_obj_t *natural_value;     // valor numérico do cartão "Natural" (lx)
-    lv_obj_t *target_caption;    // legenda do cartão "Alvo"/"Target"
-    lv_obj_t *target_value;      // valor numérico do cartão "Alvo" (lx)
+    /* Barra superior */
+    lv_obj_t *wifi_dot;          // bolinha verde (visível quando conectado)
+    lv_obj_t *clock_label;       // "HH:MM"
+    lv_obj_t *cfg_btn;           // chip tocável → Ajustes
 
-    ui_power_btn_t power_btn;    // liga/desliga a lâmpada
+    /* Marcador de acionamento (linha azul) */
+    lv_obj_t *drive_marker;      // container posicionado em abs y
+    lv_obj_t *drive_tag;         // "Acionamento XX%"
+
+    /* Marcador de luz (linha âmbar) */
+    lv_obj_t *light_marker;      // container posicionado em abs y
+
+    /* Readout central */
+    lv_obj_t *readout_kicker;    // "LUZ DEFINIDA"
+    lv_obj_t *big_val;           // número grande (ex.: "72")
+    lv_obj_t *big_pct;           // sufixo "%"
+    lv_obj_t *lux_val;           // "~ XXX lux"
 } screen_main_t;
 
 void screen_main_create(screen_main_t *out);
