@@ -24,6 +24,8 @@ static TFT_t             s_dev = {};
 static lv_display_t     *s_display = nullptr;
 static lv_indev_t       *s_indev = nullptr;
 static SemaphoreHandle_t s_lock = nullptr;
+static int               s_last_raw_x = 0;
+static int               s_last_raw_y = 0;
 /* [DEBUG] uint16_t (2 B/pixel = RGB565), não lv_color_t: aqui lv_color_t é
  * uma struct RGB888 de 3 B (ver lv_color.h), mas o display foi configurado
  * com lv_display_set_color_format(..., LV_COLOR_FORMAT_RGB565) — é esse
@@ -85,7 +87,6 @@ static void disp_flush_cb(
  *          — leituras perto da borda física podem extrapolar a faixa.
  */
 static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data) {
-    static int64_t last_noise_log_us = 0;
     static int64_t last_log_us = 0;
     static bool was_pressed = false;
     int xp = 0, yp = 0;
@@ -99,18 +100,18 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data) {
      * de cliques nos botões reais. Toques de verdade vieram sempre com
      * X >= ~150, então descartamos leituras abaixo desse limiar. */
     bool is_noise = got && (xp <= TOUCH_RAW_NOISE_MAX);
-    if (is_noise) {
-        int64_t now_us = esp_timer_get_time();
-        if (now_us - last_noise_log_us >= 2000000) {
-            ESP_LOGI(
-                TAG, 
-                "[DEBUG] Toque fantasma filtrado: bruto=(%d,%d)", 
-                xp, 
-                yp
-            );
-            last_noise_log_us = now_us;
-        }
-    }
+    // if (is_noise) {
+    //     int64_t now_us = esp_timer_get_time();
+    //     if (now_us - last_noise_log_us >= 2000000) {
+    //         ESP_LOGI(
+    //             TAG, 
+    //             "[DEBUG] Toque fantasma filtrado: bruto=(%d,%d)", 
+    //             xp, 
+    //             yp
+    //         );
+    //         last_noise_log_us = now_us;
+    //     }
+    // }
 
     if (!got || is_noise) {
         if (was_pressed) {
@@ -156,9 +157,17 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data) {
     }
     was_pressed = true;
 
+    s_last_raw_x = xp;
+    s_last_raw_y = yp;
+
     data->point.x = x;
     data->point.y = y;
     data->state = LV_INDEV_STATE_PRESSED;
+}
+
+void lvgl_port_get_raw_touch(int *xp, int *yp) {
+    if (xp) *xp = s_last_raw_x;
+    if (yp) *yp = s_last_raw_y;
 }
 
 /**
