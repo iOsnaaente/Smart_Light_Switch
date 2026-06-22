@@ -1,6 +1,7 @@
 #include "wifi_manager.h"
 
 #include <cstring>
+#include <ctime>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -9,6 +10,7 @@
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "esp_netif_sntp.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "nvs_flash.h"
@@ -19,6 +21,35 @@
 #include "ble_setup.h"
 
 static const char *TAG = "WIFI_MANAGER";
+
+/* Servidor NTP e fuso horário para o relógio exibido na tela principal
+ * (ui_manager.cpp:clock_tick_cb lê time(nullptr) — sem isso, o RTC do ESP32
+ * fica parado em 1970 e a tela mostra sempre "--:--"). TZ em formato POSIX
+ * (newlib não traz a tzdata IANA completa, só entende o offset cru):
+ * "<-03>3" = UTC-3 sem horário de verão (BRT; Brasil aboliu o DST em 2019).
+ * Ajuste aqui se o fuso do projeto não for o do Brasil. */
+#define SNTP_TIME_SERVER "pool.ntp.org"
+#define LOCAL_TIMEZONE   "<-03>3"
+
+static bool s_time_sync_started = false;
+
+static void start_time_sync(void) {
+    if (s_time_sync_started) {
+        return;
+    }
+
+    setenv("TZ", LOCAL_TIMEZONE, 1);
+    tzset();
+
+    esp_sntp_config_t sntp_cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG(SNTP_TIME_SERVER);
+    esp_err_t err = esp_netif_sntp_init(&sntp_cfg);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Falha ao iniciar sincronização SNTP: %s", esp_err_to_name(err));
+        return;
+    }
+    s_time_sync_started = true;
+    ESP_LOGI(TAG, "Sincronização de hora (SNTP) iniciada com %s", SNTP_TIME_SERVER);
+}
 
 #define WIFI_CFG_NVS_NAMESPACE  "wifi_cfg"
 #define WIFI_CFG_KEY_SSID       "ssid"
@@ -158,6 +189,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
             xEventGroupSetBits(s_event_group, WIFI_CONNECTED_BIT);
             publish_net_status(true);
+            start_time_sync();
 
             /* Não encerramos o BLE aqui de forma incondicional: se a conexão
              * foi recuperada por uma tentativa em segundo plano enquanto o

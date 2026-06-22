@@ -109,11 +109,11 @@ static void lamp_control_task( void *arg ) {
              */
             if ( app_modes_get() == APP_MODE_AUTOMATIC ) {
                 /* Faz o guardrail do valor normalizado */
-                if ( normalized < 0.05f ) {
+                if ( normalized < 0.15f ) {
                     // Força o setpoint para 0.0f quando a luz ambiente estiver muito baixa
                     triac_cntrl->status = LAMP_FULLY_ON;
                     normalized = 0.0f;
-                } else if (normalized > 0.95f) {
+                } else if (normalized > 0.85f) {
                     // Força o setpoint para 1.0f quando a luz ambiente estiver muito alta
                     triac_cntrl->status = LAMP_FULLY_OFF;
                     normalized = 1.0f;
@@ -152,17 +152,18 @@ static void lamp_control_task( void *arg ) {
              * mesma conversão usada na telemetria MQTT. */
             if ( (counter++) % 25 == 0 ) {
                 ESP_LOGD( TAG, "LDR Normalized: %.2f", normalized );
-                ESP_LOGD( TAG, "Triac Status: %s", lamp_status_to_string(triac_cntrl->status)  );
+                ESP_LOGI( TAG, "Lux medido: %.1f", normalized * 1000.0f);
                 if ( triac_cntrl->zc_online ) {
                     ESP_LOGD( TAG, "Setpoint: %.2f%%", triac_cntrl->setpoint * 100.0f );
                 } else {
                     ESP_LOGD( TAG, "Setpoint: N/A (ZC Offline)" );
                 }
+                ESP_LOGD( TAG, "Triac Status: %s", lamp_status_to_string(triac_cntrl->status)  );
                 ESP_LOGD( TAG, "Triac Pulse Count: %u", triac_cntrl->triac_pulse_count );
                 ESP_LOGD( TAG, "ISR Count: %u", triac_cntrl->isr_count );
                 ESP_LOGD( TAG, "Last Half Cycle (ms): %.2f", triac_cntrl->last_half_cycle_us / 1000.0f );
                 ESP_LOGD( TAG, "Debounce Drop Count: %u\n", triac_cntrl->debounce_drop_count );
-                ESP_LOGI( TAG, "Lux medido: %.1f", normalized * 1000.0f);
+                
             }
         }
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -172,6 +173,20 @@ static void lamp_control_task( void *arg ) {
 
 extern "C" void app_main(void) {
     esp_err_t err;
+
+    /* event_bus_init() precisa rodar ANTES de ui_manager_init(): este último
+     * chama event_bus_register() para todos os handlers da UI (on_ldr_update,
+     * on_dimmer_update, on_net_status, etc.). Sem o loop já criado,
+     * event_bus_register() retorna ESP_ERR_INVALID_STATE silenciosamente (o
+     * retorno não é checado em ui_manager_init) — a UI nunca recebia nenhum
+     * evento do event_bus (PV/MV/Wi-Fi/modo ficavam travados em 0/estado
+     * inicial); só o gesto de toque "funcionava" por atualizar a tela direto,
+     * sem passar pelo event_bus. event_bus_init() é idempotente — chamar de
+     * novo dentro de comm_manager_init() mais abaixo é seguro (no-op). */
+    err = event_bus_init();
+    if (err != ESP_OK) {
+        ESP_LOGE( TAG, "Falha ao inicializar o event_bus: %s", esp_err_to_name(err));
+    }
 
     /* [DEBUG] Movido para ANTES do comm_manager: o driver SPI do TFT precisa
      * de memória capaz de DMA para o barramento (spi_bus_initialize). Se o

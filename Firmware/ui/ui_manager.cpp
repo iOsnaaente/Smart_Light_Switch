@@ -26,9 +26,7 @@ static constexpr float UI_TARGET_STEP_LUX = 50.0f;
 static constexpr float UI_TARGET_MIN_LUX  = 0.0f;
 static constexpr float UI_TARGET_MAX_LUX  = UI_AMBIENT_LUX_SCALE;
 
-/* Limiar de deslizamento: 60% da largura da tela */
-static constexpr int32_t SWIPE_THRESHOLD = LCD_WIDTH * 6 / 10;
-/* Altura da barra superior: toques nessa faixa não iniciam arrasto */
+/* Altura da barra superior: toques nessa faixa não contam como toque no SP */
 static constexpr int32_t TOPBAR_H = 54;
 
 static screen_main_t      s_main;
@@ -37,20 +35,10 @@ static screen_settings_t  s_settings;
 static ui_runtime_state_t s_state = {};
 static bool               s_initialized = false;
 
-/* ── Estado de arrasto/deslizamento na tela principal ─────────────────────── */
-static lv_point_t s_drag_start;       // ponto de toque inicial
-static lv_point_t s_drag_last;        // último ponto de toque (para cálculo do dx final)
-static float      s_drag_start_lux;   // target_lux no momento em que o toque começou
-static bool       s_dragging = false; // está rastreando um toque?
-static bool       s_cfg_zone = false; // toque iniciou na zona do botão de config?
-
-/* Zona fixa do botão de configurações: coordenadas BRUTAS do XPT2046.
- * Se o toque de pressão inicial cair dentro deste retângulo, navega para
- * a tela de Ajustes ao soltar — independente de LVGL hit-testing. */
-static constexpr int CFG_RAW_X_MIN = 150;
-static constexpr int CFG_RAW_X_MAX = 250;
-static constexpr int CFG_RAW_Y_MIN = 100;
-static constexpr int CFG_RAW_Y_MAX = 200;
+/* ── Estado de toque na tela principal ─────────────────────────────────────
+ * Só usado para saber se o dedo está pressionado (ver apply_touch_y) — não
+ * há mais arrasto/swipe, a posição é sempre lida em ABSOLUTO. */
+static bool s_dragging = false;
 
 /* ============================================================================
  * Helpers internos
@@ -109,95 +97,88 @@ static void on_navigate(lv_event_t *e) {
     lv_screen_load(target);
 }
 
-/* ── Arrasto/deslizamento na tela principal ─────────────────────────────── */
+/* ── Toque absoluto na tela principal ──────────────────────────────────────
+ * Só toque: sem deslizamento/swipe. O valor do SP vem direto do ADC BRUTO do
+ * XPT2046 (lvgl_port_get_raw_touch) — não da coordenada de tela já calibrada
+ * pelo LVGL. Limiares HARDCODED no valor bruto (não em TOUCH_RAW_Y_MIN/MAX):
+ *   ry <= TOUCH_RAW_Y_FULL_ON  (350) -> SP = 100% (liga no máximo)
+ *   ry >= TOUCH_RAW_Y_FULL_OFF (750) -> SP = 0%   (desliga)
+ *   entre os dois                    -> interpola linear 100% -> 0%
+ * [NOTA] Essa janela (350-750) é mais estreita que o range completo calibrado
+ * em board_config.h (TOUCH_RAW_Y_MIN..MAX) — de propósito: o marcador/barra
+ * (screen_main_update) segue o toque em tempo real porque recalcula a cada
+ * PRESSING, mas a % de brilho resultante NÃO precisa corresponder à posição
+ * "justa" da barra na tela (ex.: toque em ry=650 pode resultar em ~10% de
+ * brilho mesmo a barra estando visualmente em outra fração da tela) — isso
+ * é esperado, não é bug.
+ * Mesma correção de eixo (SWAP_XY/INVERT_Y) de touch_read_cb (lvgl_port.cpp)
+ * é aplicada aqui para não duplicar a calibração com sentidos divergentes
+ * caso board_config.h mude. Eixo X não entra no cálculo.
+ * ========================================================================== */
+static constexpr int TOUCH_RAW_Y_FULL_ON  = 350; // bruto <= 350 -> 100%
+static constexpr int TOUCH_RAW_Y_FULL_OFF = 750; // bruto >= 750 -> 0%
+
+static void apply_touch_y(void) {
+    int raw_x = 0, raw_y = 0;
+    lvgl_port_get_raw_touch(&raw_x, &raw_y);
+
+    int ry = TOUCH_SWAP_XY ? raw_x : raw_y;
+    if (TOUCH_INVERT_Y) {
+        ry = (TOUCH_RAW_Y_MIN + TOUCH_RAW_Y_MAX) - ry;
+    }
+
+    float new_lux;
+    if (ry <= TOUCH_RAW_Y_FULL_ON) {
+        new_lux = UI_AMBIENT_LUX_SCALE;
+    } else if (ry >= TOUCH_RAW_Y_FULL_OFF) {
+        new_lux = 0.0f;
+    } else {
+        float frac = (float)(ry - TOUCH_RAW_Y_FULL_ON) / (float)(TOUCH_RAW_Y_FULL_OFF - TOUCH_RAW_Y_FULL_ON); // 0..1
+        new_lux = (1.0f - frac) * UI_AMBIENT_LUX_SCALE;
+    }
+
+    s_state.target_lux = new_lux;
+    s_state.relay_on    = (new_lux > 0.0f);
+    screen_main_update(&s_main, &s_state);
+}
 
 static void on_main_pressed(lv_event_t *e) {
-    /* Verifica a zona fixa do botão de config via coordenadas BRUTAS do ADC
-     * (bypassa o hit-test do LVGL, que pode falhar com o topbar sobreposto). */
-    int raw_x, raw_y;
-    lvgl_port_get_raw_touch(&raw_x, &raw_y);
-    if (raw_x >= CFG_RAW_X_MIN && raw_x <= CFG_RAW_X_MAX &&
-        raw_y >= CFG_RAW_Y_MIN && raw_y <= CFG_RAW_Y_MAX) {
-        s_cfg_zone = true;
-        s_dragging  = false;
-        return;
-    }
-    s_cfg_zone = false;
-
     lv_indev_t *indev = lv_indev_active();
     lv_point_t pt;
     lv_indev_get_point(indev, &pt);
 
-    /* Ignora toques na barra superior (onde fica o cfg_btn visual) */
+    /* Ignora toques na barra superior (onde fica o cfg_btn visual) — isso é
+     * uma zona de LAYOUT (em coordenada de tela já calibrada), diferente do
+     * cálculo de SP em si, que usa o bruto. */
     if (pt.y < TOPBAR_H) return;
 
-    s_drag_start     = pt;
-    s_drag_last      = pt;
-    s_drag_start_lux = s_state.target_lux;
-    s_dragging       = true;
-
-    /* Atualiza SP imediatamente ao toque:
-     * SP = (1 – y/H) × LUX_SCALE, com y=0 no topo e y=LCD_HEIGHT no fundo. */
-    float new_lux = (float)(LCD_HEIGHT - pt.y) * UI_AMBIENT_LUX_SCALE / LCD_HEIGHT;
-    if (new_lux < 0.0f)                  new_lux = 0.0f;
-    if (new_lux > UI_AMBIENT_LUX_SCALE)  new_lux = UI_AMBIENT_LUX_SCALE;
-    s_state.target_lux = new_lux;
-    s_state.relay_on   = (new_lux > 0.0f);
-    screen_main_update(&s_main, &s_state);
+    s_dragging = true;
+    apply_touch_y();
 }
 
 static void on_main_pressing(lv_event_t *e) {
-    if (s_cfg_zone || !s_dragging) return;
-    lv_indev_t *indev = lv_indev_active();
-    lv_point_t pt;
-    lv_indev_get_point(indev, &pt);
-    s_drag_last = pt;
-
-    /* Atualiza SP em tempo real conforme o dedo se move */
-    float new_lux = (float)(LCD_HEIGHT - pt.y) * UI_AMBIENT_LUX_SCALE / LCD_HEIGHT;
-    if (new_lux < 0.0f)                  new_lux = 0.0f;
-    if (new_lux > UI_AMBIENT_LUX_SCALE)  new_lux = UI_AMBIENT_LUX_SCALE;
-    s_state.target_lux = new_lux;
-    s_state.relay_on   = (new_lux > 0.0f);
-    screen_main_update(&s_main, &s_state);
+    if (!s_dragging) return;
+    apply_touch_y();
 }
 
 static void on_main_released(lv_event_t *e) {
-    /* Toque na zona do botão de config → navega para Ajustes */
-    if (s_cfg_zone) {
-        s_cfg_zone = false;
-        s_dragging  = false;
-        ESP_LOGI(TAG, "Zona config: abre Ajustes");
-        lv_screen_load(s_settings.root);
-        return;
-    }
-
     if (!s_dragging) return;
     s_dragging = false;
 
-    int32_t dx  = s_drag_last.x - s_drag_start.x;
-    int32_t adx = dx < 0 ? -dx : dx;
+    /* DIMMER_COMMAND é postado aqui no event_bus (não MQTT) — main.cpp's
+     * on_dimmer_command consome direto e aplica no TRIAC, então o MV reage
+     * na hora, mesmo com Wi-Fi/MQTT fora do ar. Mapeamento é proporcional
+     * (SP em lux -> % do dimmer); em modo AUTOMÁTICO o lamp_control_task
+     * sobrescreve isso a cada ciclo com base no LDR, então não há conflito.
+     * SETPOINT_CHANGED continua sendo postado à parte só para
+     * telemetria/sincronismo com app+backend via MQTT. */
+    uint8_t duty_pct = (uint8_t)(s_state.target_lux * 100.0f / UI_AMBIENT_LUX_SCALE);
+    event_dimmer_command_t dim_cmd = { .value = duty_pct };
+    event_bus_post(SMART_SWITCH_EVENT_DIMMER_COMMAND, &dim_cmd, sizeof(dim_cmd), pdMS_TO_TICKS(100));
 
-    if (adx > SWIPE_THRESHOLD) {
-        /* ── Deslizamento detectado: cancela o ajuste de SP ─────────────── */
-        s_state.target_lux = s_drag_start_lux;
-        s_state.relay_on   = (s_drag_start_lux > 0.0f);
-        screen_main_update(&s_main, &s_state);
-
-        if (dx < 0) {
-            ESP_LOGI(TAG, "Deslize <- : abre Ajustes");
-            lv_screen_load(s_settings.root);
-        } else {
-            ESP_LOGI(TAG, "Deslize -> : desliga lâmpada");
-            event_relay_command_t cmd = { .relay_on = false };
-            event_bus_post(SMART_SWITCH_EVENT_RELAY_COMMAND, &cmd, sizeof(cmd), pdMS_TO_TICKS(100));
-        }
-    } else {
-        /* ── Arrasto vertical: confirma novo SP via SETPOINT_CHANGED ─────── */
-        event_setpoint_changed_t evt = { .setpoint = s_state.target_lux };
-        event_bus_post(SMART_SWITCH_EVENT_SETPOINT_CHANGED, &evt, sizeof(evt), pdMS_TO_TICKS(100));
-        ESP_LOGI(TAG, "SP confirmado: %.0f lux", s_state.target_lux);
-    }
+    event_setpoint_changed_t evt = { .setpoint = s_state.target_lux };
+    event_bus_post(SMART_SWITCH_EVENT_SETPOINT_CHANGED, &evt, sizeof(evt), pdMS_TO_TICKS(100));
+    ESP_LOGI(TAG, "SP confirmado: %.0f lux (MV local: %u%%)", s_state.target_lux, duty_pct);
 }
 
 /* ── Tela Modo Automático ─────────────────────────────────────────────────── */
@@ -244,10 +225,10 @@ static void clock_tick_cb(lv_timer_t *timer) {
     struct tm tm_info;
     localtime_r(&now, &tm_info);
     if (tm_info.tm_year + 1900 < 2020) {
-        lv_label_set_text(s_main.clock_label, "--:--");
+        lv_label_set_text(s_main.clock_label, "--:--:--");
     } else {
-        lv_label_set_text_fmt(s_main.clock_label, "%02d:%02d",
-                              tm_info.tm_hour, tm_info.tm_min);
+        lv_label_set_text_fmt(s_main.clock_label, "%02d:%02d:%02d",
+                              tm_info.tm_hour, tm_info.tm_min, tm_info.tm_sec);
     }
 }
 
@@ -300,11 +281,6 @@ static void on_power_update(void *handler_arg, esp_event_base_t base, int32_t id
     lvgl_port_unlock();
 }
 
-static void on_ble_provision_status(void *handler_arg, esp_event_base_t base, int32_t id, void *event_data) {
-    event_ble_provision_status_t *evt = (event_ble_provision_status_t *)event_data;
-    if (!lvgl_port_lock(100)) {
-        return;
-    }
 static void on_ble_provision_status(void *arg, esp_event_base_t base, int32_t id, void *data) {
     event_ble_provision_status_t *evt = (event_ble_provision_status_t *)data;
     if (!lvgl_port_lock(100)) return;
@@ -349,8 +325,10 @@ esp_err_t ui_manager_init(void) {
     lv_obj_add_event_cb(s_main.root, on_main_pressing, LV_EVENT_PRESSING, nullptr);
     lv_obj_add_event_cb(s_main.root, on_main_released, LV_EVENT_RELEASED, nullptr);
 
-    /* Botão de configurações (chip engrenagem no topo) → Ajustes */
-    lv_obj_add_event_cb(s_main.cfg_btn, on_navigate, LV_EVENT_CLICKED, s_settings.root);
+    /* Botão de configurações (chip engrenagem no topo) — DESATIVADO por
+     * enquanto: fica visível na tela, mas sem handler de clique/navegação.
+     * Reativar bastaria descomentar a linha abaixo. */
+    // lv_obj_add_event_cb(s_main.cfg_btn, on_navigate, LV_EVENT_CLICKED, s_settings.root);
 
     /* ── Tela Modo Automático ─────────────────────────────────────────────── */
     lv_obj_add_event_cb(s_auto.header.back_btn,   on_navigate,           LV_EVENT_CLICKED,       s_main.root);

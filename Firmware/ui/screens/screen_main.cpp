@@ -152,7 +152,7 @@ void screen_main_create(screen_main_t *out) {
     lv_obj_t *drive_tag = lv_label_create(drive_pill);
     lv_obj_set_style_text_font(drive_tag, UI_FONT_BODY, 0);
     lv_obj_set_style_text_color(drive_tag, col_drive_tag_fg(), 0);
-    lv_label_set_text(drive_tag, "MV 0 lx");
+    lv_label_set_text(drive_tag, "MV 0%");
 
     /* ---- marcador de luz (linha branca + pill à esquerda + grip à direita) */
     lv_obj_t *light_marker = bare(root);
@@ -222,10 +222,19 @@ void screen_main_create(screen_main_t *out) {
     lv_obj_set_style_text_color(big_pct, col_ink_light(), 0);
     lv_label_set_text(big_pct, "lx");
 
-    lv_obj_t *lux_val = lv_label_create(readout);
-    lv_obj_set_style_text_font(lux_val, UI_FONT_BODY, 0);
-    lv_obj_set_style_text_color(lux_val, col_ink_light(), 0);
-    lv_label_set_text(lux_val, "MV: 0 lx");
+    /* MV (saída real do dimmer/TRIAC) e PV (leitura ao vivo do LDR) — PV fica
+     * embaixo do MV de propósito: PV nunca depende de rede (lê o LDR local),
+     * MV reflete o comando confirmado pelo backend (zera sem MQTT/Wi-Fi). */
+    lv_obj_t *mv_val = lv_label_create(readout);
+    lv_obj_set_style_text_font(mv_val, UI_FONT_BODY, 0);
+    lv_obj_set_style_text_color(mv_val, col_ink_light(), 0);
+    lv_label_set_text(mv_val, "MV: 0%");
+
+    lv_obj_t *pv_val = lv_label_create(readout);
+    lv_obj_set_style_text_font(pv_val, UI_FONT_BODY, 0);
+    lv_obj_set_style_text_color(pv_val, col_ink_light(), 0);
+    lv_obj_set_style_opa(pv_val, LV_OPA_70, 0);
+    lv_label_set_text(pv_val, "PV: 0 lx");
 
     /* ---- dica de arraste no rodapé --------------------------------------- */
     lv_obj_t *hint = lv_label_create(root);
@@ -268,7 +277,7 @@ void screen_main_create(screen_main_t *out) {
     lv_obj_t *clock_label = lv_label_create(clock_chip);
     lv_obj_set_style_text_font(clock_label, UI_FONT_BODY, 0);
     lv_obj_set_style_text_color(clock_label, col_ink_light(), 0);
-    lv_label_set_text(clock_label, "--:--");
+    lv_label_set_text(clock_label, "--:--:--");
 
     /* chip de configurações (direita) — tocável → Ajustes */
     lv_obj_t *cfg_btn = chip_create(topbar, CHIP_H);
@@ -295,7 +304,8 @@ void screen_main_create(screen_main_t *out) {
     out->readout_kicker = kicker;
     out->big_val      = big_val;
     out->big_pct      = big_pct;
-    out->lux_val      = lux_val;
+    out->mv_val       = mv_val;
+    out->pv_val       = pv_val;
 }
 
 /* ============================================================================
@@ -303,18 +313,23 @@ void screen_main_create(screen_main_t *out) {
  * ========================================================================== */
 
 void screen_main_update(const screen_main_t *s, const ui_runtime_state_t *state) {
-    /* SP = setpoint em lux (controlado pelo gesto vertical)
-     * MV = medido pelo sensor LDR (natural_lux do event_bus) */
+    /* SP = setpoint em lux, controlado pelo gesto vertical (target_lux).
+     * MV = manipulated variable — saída REAL do dimmer/TRIAC (brightness_pct,
+     *      0-100% já pronto, vem de DIMMER_UPDATE). Só muda quando o backend
+     *      confirma um comando via MQTT — fica "parado" sem rede.
+     * PV = process variable — leitura ao vivo do sensor LDR (natural_lux).
+     *      Sempre local, nunca depende de rede; por isso fica também citada
+     *      separada do MV (ver screen_main.h / screen_main_create). */
     const int sp_lux = (int)state->target_lux;
-    const int mv_lux = (int)state->natural_lux;
+    const int mv_pct = (int)state->brightness_pct;
+    const int pv_lux = (int)state->natural_lux;
 
     /* Normaliza para 0-100% da escala de lux */
     const int sp_pct = (int)(state->target_lux * 100.0f / UI_AMBIENT_LUX_SCALE);
-    const int mv_pct = (int)(state->natural_lux * 100.0f / UI_AMBIENT_LUX_SCALE);
 
     /* Alturas das camadas em pixels:
      * âmbar (light_layer) = SP — "o que você quer"
-     * azul  (drive_layer) = MV — "o que o sensor mede" */
+     * azul  (drive_layer) = MV — "o que o atuador está realmente fazendo" */
     const int32_t light_h = (int32_t)sp_pct * LCD_HEIGHT / 100;
     const int32_t drive_h = (int32_t)mv_pct * LCD_HEIGHT / 100;
 
@@ -344,17 +359,19 @@ void screen_main_update(const screen_main_t *s, const ui_runtime_state_t *state)
     } else {
         lv_obj_add_flag(s->drive_marker, LV_OBJ_FLAG_HIDDEN);
     }
-    lv_label_set_text_fmt(s->drive_tag, "MV %d lx", mv_lux);
+    lv_label_set_text_fmt(s->drive_tag, "MV %d%%", mv_pct);
 
     /* Readout central: texto escuro quando SP cobre a metade da tela (≥50%) */
     lv_color_t txt = (sp_pct >= 50) ? col_ink_dark() : col_ink_light();
     lv_obj_set_style_text_color(s->readout_kicker, txt, 0);
     lv_obj_set_style_text_color(s->big_val, txt, 0);
     lv_obj_set_style_text_color(s->big_pct, txt, 0);
-    lv_obj_set_style_text_color(s->lux_val, txt, 0);
+    lv_obj_set_style_text_color(s->mv_val, txt, 0);
+    lv_obj_set_style_text_color(s->pv_val, txt, 0);
 
     lv_label_set_text_fmt(s->big_val, "%d", sp_lux);
-    lv_label_set_text_fmt(s->lux_val, "MV: %d lx", mv_lux);
+    lv_label_set_text_fmt(s->mv_val, "MV: %d%%", mv_pct);
+    lv_label_set_text_fmt(s->pv_val, "PV: %d lx", pv_lux);
 
     /* Dot de Wi-Fi */
     if (state->wifi_connected) {
