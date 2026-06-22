@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -23,13 +25,50 @@ class _ControlPageState extends State<ControlPage> {
   String? _deviceId;
   bool _ready = false;
 
+  // Arrastar o dimmer dispara muitos eventos por segundo; sem isso cada um
+  // vira uma chamada à API e o rebuild fica "travado" durante o gesto. O
+  // valor local dá feedback visual imediato enquanto o envio é limitado a
+  // no máximo 1x por segundo (mantendo sempre o valor mais recente).
+  double? _localDimmer;
+  double? _lastSentDimmer;
+  Timer? _dimmerThrottle;
+
+  // O sensor reporta lux/potência/etc a cada ~1s via MQTT -> backend; sem um
+  // polling aqui a tela ficava parada com a leitura do primeiro carregamento.
+  // 500ms (mais rápido que a cadência do sensor) reduz a defasagem média entre
+  // a leitura chegar no backend e aparecer na tela; os gauges (LuxGauge/
+  // MiniLuxGauge) suavizam a transição entre valores para não "pular".
+  static const _refreshInterval = Duration(milliseconds: 500);
+  Timer? _stateRefreshTimer;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_ready) {
       _deviceId = widget.deviceId ?? (ModalRoute.of(context)?.settings.arguments as String?);
       _ready = true;
+      if (!context.read<DeviceProvider>().demoMode) {
+        _stateRefreshTimer = Timer.periodic(_refreshInterval, (_) => _refreshState());
+      }
     }
+  }
+
+  Future<void> _refreshState() async {
+    final id = _deviceId;
+    if (id == null) return;
+    try {
+      await context.read<DeviceProvider>().refreshDevice(id);
+    } catch (_) {
+      // Falha silenciosa: erro a cada segundo encheria a tela de snackbars;
+      // o estado "offline" do dispositivo já comunica isso visualmente.
+    }
+  }
+
+  @override
+  void dispose() {
+    _dimmerThrottle?.cancel();
+    _stateRefreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _setMode(Device device, int index) async {
@@ -40,7 +79,19 @@ class _ControlPageState extends State<ControlPage> {
     }
   }
 
-  Future<void> _setDimmer(Device device, double value) async {
+  void _onDimmerChanged(Device device, double value) {
+    setState(() => _localDimmer = value);
+    _dimmerThrottle ??= Timer.periodic(const Duration(seconds: 1), (_) => _flushDimmer(device));
+  }
+
+  Future<void> _flushDimmer(Device device) async {
+    final value = _localDimmer;
+    if (value == null || value == _lastSentDimmer) {
+      _dimmerThrottle?.cancel();
+      _dimmerThrottle = null;
+      return;
+    }
+    _lastSentDimmer = value;
     try {
       await context.read<DeviceProvider>().setDimmer(device.id, value.round());
     } catch (e) {
@@ -65,6 +116,10 @@ class _ControlPageState extends State<ControlPage> {
   Widget build(BuildContext context) {
     final provider = context.watch<DeviceProvider>();
     final device = _deviceId != null ? provider.deviceById(_deviceId!) : null;
+
+    if (device != null && _localDimmer != null && device.dimmer == _localDimmer!.round()) {
+      _localDimmer = null;
+    }
 
     if (device == null) {
       return Scaffold(
@@ -91,7 +146,12 @@ class _ControlPageState extends State<ControlPage> {
         ),
       ),
       body: device.online
-          ? _OnlineBody(device: device, onModeChanged: (i) => _setMode(device, i), onDimmerChanged: (v) => _setDimmer(device, v))
+          ? _OnlineBody(
+              device: device,
+              dimmerOverride: _localDimmer,
+              onModeChanged: (i) => _setMode(device, i),
+              onDimmerChanged: (v) => _onDimmerChanged(device, v),
+            )
           : _OfflineBody(device: device, onReconnect: () => _reconnect(device)),
       bottomNavigationBar: SmartBottomNav(
         currentIndex: 0,
@@ -105,10 +165,16 @@ class _ControlPageState extends State<ControlPage> {
 
 class _OnlineBody extends StatelessWidget {
   final Device device;
+  final double? dimmerOverride;
   final ValueChanged<int> onModeChanged;
   final ValueChanged<double> onDimmerChanged;
 
-  const _OnlineBody({required this.device, required this.onModeChanged, required this.onDimmerChanged});
+  const _OnlineBody({
+    required this.device,
+    required this.dimmerOverride,
+    required this.onModeChanged,
+    required this.onDimmerChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -159,7 +225,7 @@ class _OnlineBody extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         DimmerSlider(
-          percent: device.dimmer.toDouble(),
+          percent: dimmerOverride ?? device.dimmer.toDouble(),
           label: auto ? 'Dimmer (automático)' : 'Dimmer da lâmpada',
           muted: auto,
           onChanged: auto ? null : onDimmerChanged,
@@ -178,7 +244,7 @@ class _OnlineBody extends StatelessWidget {
           children: [
             StatTile(value: device.naturalLux.round().toString(), unit: 'lux', label: 'luz natural', tone: ChipToneAccent.cool),
             const SizedBox(width: 8),
-            StatTile(value: '${device.dimmer}', unit: '%', label: 'dimmer', tone: ChipToneAccent.accent),
+            StatTile(value: '${(dimmerOverride ?? device.dimmer.toDouble()).round()}', unit: '%', label: 'dimmer', tone: ChipToneAccent.accent),
             const SizedBox(width: 8),
             StatTile(value: device.powerW.toStringAsFixed(1), unit: 'W', label: 'consumo'),
           ],

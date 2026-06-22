@@ -9,16 +9,17 @@ extern "C" {
 #endif
 
 typedef struct {
-    bool start_ap_fallback;
-    const char *ap_ssid;
-    const char *ap_pass;
+    /* Após WIFI_MAX_RETRY_BEFORE_AP falhas seguidas de reconexão, reabre o
+     * pareamento BLE (ble_setup_start) para receber novas credenciais sem
+     * derrubar o STA — não sobe AP, BLE e STA coexistem no mesmo rádio. */
+    bool enable_ble_fallback;
 } wifi_manager_config_t;
 
 typedef enum {
     WIFI_MANAGER_STATE_IDLE = 0,
     WIFI_MANAGER_STATE_CONNECTING,
     WIFI_MANAGER_STATE_CONNECTED,
-    WIFI_MANAGER_STATE_AP_FALLBACK,
+    WIFI_MANAGER_STATE_BLE_FALLBACK,
     WIFI_MANAGER_STATE_FAILED,
 } wifi_manager_state_t;
 

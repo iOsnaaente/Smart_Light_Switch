@@ -94,8 +94,8 @@ static void lamp_control_task( void *arg ) {
             ldr_evt.normalized = normalized, 
             ldr_evt.voltage = voltage;
             event_bus_post(
-                SMART_SWITCH_EVENT_LDR_UPDATE, 
-                &ldr_evt, sizeof(ldr_evt), 
+                SMART_SWITCH_EVENT_LDR_UPDATE,
+                &ldr_evt, sizeof(ldr_evt),
                 pdMS_TO_TICKS(100)
             );
 
@@ -147,7 +147,9 @@ static void lamp_control_task( void *arg ) {
              * (touch/menus), esse bloco a cada ~2.5s só polui o monitor serial
              * e atrapalha a leitura dos logs [DEBUG] de touch/navegação. Sobe
              * de novo pra LOGI (ou `idf.py menuconfig` -> Log level = Debug)
-             * quando precisar depurar LDR/triac de novo. */
+             * quando precisar depurar LDR/triac de novo.              
+             * 1000.0f precisa bater com MQTT_LUX_SCALE em mqtt_client.cpp,
+             * mesma conversão usada na telemetria MQTT. */
             if ( (counter++) % 25 == 0 ) {
                 ESP_LOGD( TAG, "LDR Normalized: %.2f", normalized );
                 ESP_LOGD( TAG, "Triac Status: %s", lamp_status_to_string(triac_cntrl->status)  );
@@ -160,6 +162,7 @@ static void lamp_control_task( void *arg ) {
                 ESP_LOGD( TAG, "ISR Count: %u", triac_cntrl->isr_count );
                 ESP_LOGD( TAG, "Last Half Cycle (ms): %.2f", triac_cntrl->last_half_cycle_us / 1000.0f );
                 ESP_LOGD( TAG, "Debounce Drop Count: %u\n", triac_cntrl->debounce_drop_count );
+                ESP_LOGI( TAG, "Lux medido: %.1f", normalized * 1000.0f);
             }
         }
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -197,8 +200,6 @@ extern "C" void app_main(void) {
     comm_cfg.mqtt_broker_uri = MQTT_BROKER_URI;
     comm_cfg.mqtt_username = MQTT_USERNAME;
     comm_cfg.mqtt_password = MQTT_PASSWORD;
-    comm_cfg.wifi_ap_fallback_ssid = WIFI_AP_FALLBACK_SSID;
-    comm_cfg.wifi_ap_fallback_pass = WIFI_AP_FALLBACK_PASS;
     err = comm_manager_init(&comm_cfg);
     if (err != ESP_OK) {
         ESP_LOGE( TAG, "Falha ao inicializar o comm_manager: %s", esp_err_to_name(err));

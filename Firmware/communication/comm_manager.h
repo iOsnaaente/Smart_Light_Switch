@@ -20,15 +20,14 @@ typedef struct {
      * são repassadas ao mqtt_client via mqtt_client_config_t. */
     const char *mqtt_username;
     const char *mqtt_password;
-
-    /* SSID/senha do AP de emergência usado pelo wifi_manager caso a
-     * reconexão à rede salva falhe repetidamente. */
-    const char *wifi_ap_fallback_ssid;
-    const char *wifi_ap_fallback_pass;
 } comm_manager_config_t;
 
 /* Orquestra o ciclo completo de conectividade:
  *   NVS sem credenciais -> provisionamento BLE -> Wi-Fi -> MQTT
+ *
+ * Se a rede salva existir mas a reconexão falhar repetidamente, o
+ * wifi_manager reabre o provisionamento BLE (sem subir AP — BLE e STA
+ * coexistem no mesmo rádio) para receber credenciais novas.
  *
  * comm_manager_init prepara NVS/netif/event loops e os submódulos
  * (wifi_manager, ble_setup, mqtt_client) de acordo com os flags habilitados.

@@ -69,6 +69,7 @@ typedef struct {
     const char *when_dark;
     const char *wifi;
     const char *pairing;
+    const char *power;
 } ui_strings_t;
 
 static inline const ui_strings_t *ui_theme_strings(ui_lang_t lang) {
@@ -83,6 +84,7 @@ static inline const ui_strings_t *ui_theme_strings(ui_lang_t lang) {
         .when_dark = "Quando escurece, a lâmpada completa até o alvo.",
         .wifi = "Wi-Fi",
         .pairing = "pareando…",
+        .power = "Potência",
     };
     static const ui_strings_t en = {
         .room = "Living Room", .on = "On", .off = "Off",
@@ -95,6 +97,7 @@ static inline const ui_strings_t *ui_theme_strings(ui_lang_t lang) {
         .when_dark = "When it gets dark, the lamp fills up to target.",
         .wifi = "Wi-Fi",
         .pairing = "pairing…",
+        .power = "Power",
     };
     return (lang == UI_LANG_EN) ? &en : &pt;
 }

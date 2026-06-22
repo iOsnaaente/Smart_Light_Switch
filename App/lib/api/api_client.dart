@@ -24,6 +24,7 @@ class ApiClient {
   final String baseUrl;
   String? username;
   String? password;
+  int? userId;
 
   ApiClient({String? baseUrl})
       : baseUrl = baseUrl ??
@@ -59,6 +60,7 @@ class ApiClient {
     if (success) {
       this.username = username;
       this.password = password;
+      userId = body['user_id'] as int?;
     }
     return success;
   }
@@ -66,6 +68,7 @@ class ApiClient {
   void logout() {
     username = null;
     password = null;
+    userId = null;
   }
 
   /* ---- dispositivos --------------------------------------------------------- */

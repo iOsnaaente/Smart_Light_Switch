@@ -22,6 +22,7 @@ class AuthProvider extends ChangeNotifier {
   bool get loading => _loading;
   String? get error => _error;
   String? get username => isDemo ? 'demo' : api.username;
+  int? get userId => isDemo ? null : api.userId;
 
   Future<bool> login(String username, String password) async {
     _loading = true;

@@ -29,6 +29,7 @@ typedef struct {
     uint8_t    brightness_pct;       // intensidade atual 0-100% (event_bus: DIMMER_UPDATE)
     float      natural_lux;          // estimativa de luz ambiente (event_bus: LDR_UPDATE)
     float      target_lux;           // alvo configurado no modo automático (local + SETPOINT_CHANGED)
+    float      active_power_w;       // potência ativa medida (event_bus: POWER_UPDATE) — mesma fonte do backend
     bool       wifi_connected;       // status de rede (event_bus: NET_STATUS)
     char       ip_addr[16];          // IP atual, exibido em Ajustes > Wi-Fi
     bool       ble_pairing_active;   // pareamento BLE em andamento (event_bus: BLE_PROVISION_STATUS)

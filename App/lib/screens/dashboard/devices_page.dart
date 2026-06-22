@@ -33,10 +33,17 @@ class _DevicesPageState extends State<DevicesPage> {
     Navigator.pushNamed(context, AppRoutes.control, arguments: device.id);
   }
 
+  Future<void> _openScanDialog() async {
+    final provisioned = await DeviceScanDialog.show(context);
+    if (provisioned && mounted) {
+      context.read<DeviceProvider>().loadDevices();
+    }
+  }
+
   void _onMenuSelected(String value) {
     switch (value) {
       case 'scan':
-        DeviceScanDialog.show(context);
+        _openScanDialog();
         break;
       case 'logout':
         context.read<AuthProvider>().logout();
@@ -186,7 +193,7 @@ class _DevicesPageState extends State<DevicesPage> {
                     if (provider.devices.isEmpty) ...[
                       const SizedBox(height: 14),
                       OutlinedButton.icon(
-                        onPressed: () => DeviceScanDialog.show(context),
+                        onPressed: _openScanDialog,
                         icon: const Icon(Icons.search_rounded, size: 18),
                         label: const Text('Procurar dispositivos próximos'),
                       ),

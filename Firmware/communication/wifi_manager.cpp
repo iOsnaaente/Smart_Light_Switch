@@ -25,16 +25,30 @@ static const char *TAG = "WIFI_MANAGER";
 #define WIFI_CFG_KEY_PASS       "pass"
 #define WIFI_CFG_KEY_UID        "uid"
 
-#define WIFI_MAX_RETRY_BEFORE_AP    6
+#define WIFI_MAX_RETRY_BEFORE_BLE_FALLBACK    6
 #define WIFI_BACKOFF_BASE_MS        1000
 #define WIFI_BACKOFF_MAX_MS         60000
+
+/* Relatos de fórum: alguns ESP32 falham a autenticação 802.11 (reason=2,
+ * AUTH_EXPIRE) mesmo com sinal forte, e reduzir a potência de TX "conserta"
+ * — possível efeito do front-end de RF saturando o receptor do AP a curta
+ * distância. Ajuste entre 5 e 8 dBm se ainda falhar. */
+#define WIFI_TX_POWER_LIMIT_DBM     8
+
+static void apply_tx_power_limit(void) {
+    esp_err_t err = esp_wifi_set_max_tx_power(WIFI_TX_POWER_LIMIT_DBM * 4 /* unidades de 0.25dBm */);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Potência de TX limitada a %d dBm", WIFI_TX_POWER_LIMIT_DBM);
+    } else {
+        ESP_LOGW(TAG, "Falha ao limitar potência de TX: %s", esp_err_to_name(err));
+    }
+}
 
 static wifi_manager_config_t s_config = {};
 static bool s_initialized = false;
 static bool s_started = false;
 
 static esp_netif_t *s_sta_netif = nullptr;
-static esp_netif_t *s_ap_netif = nullptr;
 
 static EventGroupHandle_t s_event_group = nullptr;
 static const int WIFI_CONNECTED_BIT = BIT0;
@@ -70,40 +84,15 @@ static void reconnect_timer_cb(void *arg) {
     esp_wifi_connect();
 }
 
-static void start_ap_fallback(void) {
-    if (!s_config.start_ap_fallback || s_state == WIFI_MANAGER_STATE_AP_FALLBACK) {
+static void start_ble_fallback(void) {
+    if (!s_config.enable_ble_fallback || s_state == WIFI_MANAGER_STATE_BLE_FALLBACK) {
         return;
     }
 
-    ESP_LOGW(TAG, "Falhas consecutivas de reconexão: subindo AP de emergência '%s'", s_config.ap_ssid ? s_config.ap_ssid : "");
-    s_state = WIFI_MANAGER_STATE_AP_FALLBACK;
-
-    if (s_ap_netif == nullptr) {
-        s_ap_netif = esp_netif_create_default_wifi_ap();
-    }
-
-    wifi_config_t ap_cfg = {};
-    const char *ssid = s_config.ap_ssid ? s_config.ap_ssid : "SmartLight-Setup";
-    const char *pass = s_config.ap_pass ? s_config.ap_pass : "";
-
-    strncpy((char *)ap_cfg.ap.ssid, ssid, sizeof(ap_cfg.ap.ssid) - 1);
-    ap_cfg.ap.ssid_len = strlen(ssid);
-    ap_cfg.ap.channel = 1;
-    ap_cfg.ap.max_connection = 4;
-
-    if (strlen(pass) >= 8) {
-        strncpy((char *)ap_cfg.ap.password, pass, sizeof(ap_cfg.ap.password) - 1);
-        ap_cfg.ap.authmode = WIFI_AUTH_WPA2_PSK;
-    } else {
-        ap_cfg.ap.authmode = WIFI_AUTH_OPEN;
-    }
-
-    esp_wifi_set_mode(WIFI_MODE_APSTA);
-    esp_wifi_set_config(WIFI_IF_AP, &ap_cfg);
+    ESP_LOGW(TAG, "Falhas consecutivas de reconexão: reabrindo provisionamento BLE (STA continua tentando em segundo plano)");
+    s_state = WIFI_MANAGER_STATE_BLE_FALLBACK;
 
     publish_net_status(false);
-
-    /* Reabre o provisionamento BLE para que o usuário possa enviar novas credenciais. */
     ble_setup_start();
 }
 
@@ -122,13 +111,16 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
                 xEventGroupClearBits(s_event_group, WIFI_CONNECTED_BIT);
                 strncpy(s_last_ip, "0.0.0.0", sizeof(s_last_ip));
 
+                auto *disc = (wifi_event_sta_disconnected_t *)event_data;
+                ESP_LOGW(TAG, "Wi-Fi desconectado, reason=%d", disc->reason);
+
                 if (was_connected) {
                     ESP_LOGW(TAG, "Conexão Wi-Fi perdida");
                     publish_net_status(false);
                 }
 
-                if (s_state == WIFI_MANAGER_STATE_AP_FALLBACK) {
-                    /* Já estamos no modo de emergência; continua tentando em segundo plano. */
+                if (s_state == WIFI_MANAGER_STATE_BLE_FALLBACK) {
+                    /* Já estamos no modo de provisionamento BLE; continua tentando o STA em segundo plano. */
                     s_retry_count++;
                     uint32_t delay_ms = backoff_delay_ms(s_retry_count);
                     esp_timer_stop(s_reconnect_timer);
@@ -139,13 +131,13 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
                 s_state = WIFI_MANAGER_STATE_CONNECTING;
                 s_retry_count++;
 
-                if (s_retry_count >= WIFI_MAX_RETRY_BEFORE_AP) {
-                    start_ap_fallback();
+                if (s_retry_count >= WIFI_MAX_RETRY_BEFORE_BLE_FALLBACK) {
+                    start_ble_fallback();
                     break;
                 }
 
                 uint32_t delay_ms = backoff_delay_ms(s_retry_count);
-                ESP_LOGI(TAG, "Reconectando em %u ms (tentativa %u/%u)", (unsigned)delay_ms, (unsigned)s_retry_count, (unsigned)WIFI_MAX_RETRY_BEFORE_AP);
+                ESP_LOGI(TAG, "Reconectando em %u ms (tentativa %u/%u)", (unsigned)delay_ms, (unsigned)s_retry_count, (unsigned)WIFI_MAX_RETRY_BEFORE_BLE_FALLBACK);
                 esp_timer_stop(s_reconnect_timer);
                 esp_timer_start_once(s_reconnect_timer, (uint64_t)delay_ms * 1000ULL);
                 break;
@@ -166,6 +158,14 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
             xEventGroupSetBits(s_event_group, WIFI_CONNECTED_BIT);
             publish_net_status(true);
+
+            /* Não encerramos o BLE aqui de forma incondicional: se a conexão
+             * foi recuperada por uma tentativa em segundo plano enquanto o
+             * provisionamento estava aberto (WIFI_MANAGER_STATE_BLE_FALLBACK),
+             * ble_setup pode estar no meio de notificar o app sobre um
+             * resultado de provisionamento — quem decide encerrar o rádio BLE
+             * é sempre o próprio ble_setup (ble_setup_stop), depois de
+             * concluir a notificação via GATT. */
         }
     }
 }
@@ -267,6 +267,7 @@ esp_err_t wifi_manager_start(void) {
     }
 
     s_started = true;
+    apply_tx_power_limit();
     ESP_LOGI(TAG, "Conectando ao SSID '%s'...", ssid);
     return ESP_OK;
 }
@@ -387,12 +388,63 @@ esp_err_t wifi_manager_load_user_id(int32_t *out_user_id) {
     return err;
 }
 
+/* Faz um scan ativo e loga canal/RSSI/authmode do AP alvo antes de tentar
+ * conectar — ajuda a distinguir "AP fora de alcance/só 5GHz" de "senha
+ * errada" quando a conexão falha (ESP32-C3 só tem rádio 2.4GHz). */
+static void log_ap_diagnostics(const char *target_ssid) {
+    if (esp_wifi_scan_start(nullptr, true) != ESP_OK) {
+        ESP_LOGW(TAG, "Scan de diagnóstico falhou ao iniciar");
+        return;
+    }
+
+    uint16_t ap_count = 0;
+    esp_wifi_scan_get_ap_num(&ap_count);
+    if (ap_count == 0) {
+        ESP_LOGW(TAG, "Scan de diagnóstico: nenhuma rede visível");
+        return;
+    }
+
+    auto *records = (wifi_ap_record_t *)malloc(sizeof(wifi_ap_record_t) * ap_count);
+    if (records == nullptr) {
+        return;
+    }
+    if (esp_wifi_scan_get_ap_records(&ap_count, records) == ESP_OK) {
+        bool found = false;
+        for (int i = 0; i < ap_count; i++) {
+            if (strcmp((const char *)records[i].ssid, target_ssid) == 0) {
+                found = true;
+                ESP_LOGI(
+                    TAG, "Scan: AP '%s' visível - canal=%d rssi=%d authmode=%d",
+                    target_ssid, records[i].primary, records[i].rssi, (int)records[i].authmode);
+            }
+        }
+        if (!found) {
+            ESP_LOGW(
+                TAG, "Scan: AP '%s' NÃO encontrado entre %d rede(s) visível(eis) (fora de alcance ou só 5GHz?)",
+                target_ssid, (int)ap_count);
+        }
+    }
+    free(records);
+}
+
 esp_err_t wifi_manager_connect_with(const char *ssid, const char *password, uint32_t timeout_ms) {
     if (!s_initialized || ssid == nullptr) {
         return ESP_ERR_INVALID_ARG;
     }
 
     ESP_LOGI(TAG, "Testando conexão com SSID '%s'...", ssid);
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    if (!s_started) {
+        esp_err_t err = esp_wifi_start();
+        if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
+            return err;
+        }
+        s_started = true;
+        apply_tx_power_limit();
+    }
+    esp_wifi_disconnect();
+    log_ap_diagnostics(ssid);
 
     wifi_config_t wifi_cfg = {};
     strncpy((char *)wifi_cfg.sta.ssid, ssid, sizeof(wifi_cfg.sta.ssid) - 1);
@@ -403,19 +455,8 @@ esp_err_t wifi_manager_connect_with(const char *ssid, const char *password, uint
     s_retry_count = 0;
     s_state = WIFI_MANAGER_STATE_CONNECTING;
 
-    esp_wifi_disconnect();
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg));
-
-    if (!s_started) {
-        esp_err_t err = esp_wifi_start();
-        if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
-            return err;
-        }
-        s_started = true;
-    } else {
-        esp_wifi_connect();
-    }
+    esp_wifi_connect();
 
     EventBits_t bits = xEventGroupWaitBits(s_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdTRUE, pdMS_TO_TICKS(timeout_ms));
     if (bits & WIFI_CONNECTED_BIT) {
